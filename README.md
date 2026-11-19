@@ -1,34 +1,144 @@
-# IECE Project – Smart Parking System
+# Smart Parking System
 
-MicroPython firmware for a Raspberry Pi Pico W smart parking system.
+An automated single-spot car park built on a **Raspberry Pi Pico W** running **MicroPython**, made for the IECE course project.
 
-- **HC-SR04 ultrasonic** at the entrance detects a car and opens the **SG90 servo** barrier.
-- **IR obstacle sensor** detects whether the parking spot is occupied.
-- **Green / red LEDs** show spot free / occupied.
-- **SSD1306 OLED** (128×64, I2C) shows spot, gate and distance status.
+When a car comes up to the entrance, an ultrasonic sensor detects it and a servo lifts the barrier. An IR sensor in the parking bay checks whether the spot is taken. Green and red LEDs show the spot status, and an OLED screen shows live information. If the spot is already taken, the barrier stays closed and the screen shows **LOT FULL**.
 
-## Pin map
+---
 
-| Part | GPIO |
-|---|---|
-| HC-SR04 TRIG / ECHO (via level shifter ch 1–2) | GP2 / GP3 |
-| OLED SDA / SCL (I2C0) | GP4 / GP5 |
-| IR sensor OUT | GP15 |
-| Servo signal (via level shifter ch 3) | GP16 |
-| Green LED / Red LED (220 Ω each) | GP28 / GP27 |
+## Features
 
-Full wiring, power budget and parts list: [docs/circuit-design.html](docs/circuit-design.html) (download and open in a browser).
+- **Automatic gate:** the HC-SR04 ultrasonic sensor detects a car within 10 cm of the gate and opens the SG90 servo barrier.
+- **Spot detection:** the IR obstacle sensor checks whether the bay is free or taken. Its readings are debounced, so noise doesn't flip the status.
+- **Full-lot protection:** the gate won't open for a new car while the spot is taken.
+- **Status LEDs:** green means the spot is free, red means it's taken.
+- **Live display:** a 128×64 OLED shows the spot status, the gate status and the measured distance.
+- **Non-blocking control loop:** sensors, gate timer and display all update about 10 times a second, with no `sleep` blocking the gate logic.
+- **Separate test scripts** for every component, plus a tool to calibrate the servo.
 
-## Files
+---
+
+## Hardware
+
+| Qty | Component | Notes |
+|---|---|---|
+| 1 | Raspberry Pi Pico W | Controller, 3.3 V logic |
+| 1 | HC-SR04 ultrasonic sensor | Gate detection, needs 5 V |
+| 1 | IR obstacle sensor (FC-51 / MH-B) | Spot detection, powered at 3.3 V |
+| 1 | SG90 micro servo | Barrier arm |
+| 1 | SSD1306 OLED 0.96″ 128×64 (I2C) | Status display |
+| 1 | 4-channel logic level converter (BSS138) | 5 V ↔ 3.3 V for the HC-SR04 and the servo |
+| 1 + 1 | 5 mm LEDs, green and red | Spot status |
+| 2 | 220 Ω resistors | LED current limit, about 6 mA each |
+| 1 | 5 V supply, ≥ 1 A | Powers the servo and the HC-SR04 |
+| 1 | 470 µF capacitor (optional) | Smooths the servo's supply |
+
+---
+
+## Wiring
+
+| Component | Pin | Connects to | Pico pin |
+|---|---|---|---|
+| HC-SR04 | VCC / GND | External 5 V / GND | — / GND |
+| HC-SR04 | TRIG | Shifter HV1 → LV1 | **GP20** (pin 26) |
+| HC-SR04 | ECHO | Shifter HV2 → LV2 | **GP19** (pin 25) |
+| Level shifter | HV / LV / GND | 5 V ext / 3V3(OUT) / GND | — / pin 36 / GND |
+| SSD1306 OLED | VCC / GND | 3V3 / GND | pin 36 / GND |
+| SSD1306 OLED | SDA / SCL | I2C0 | **GP4** (pin 6) / **GP5** (pin 7) |
+| IR sensor | VCC / GND | 3V3 / GND | pin 36 / GND |
+| IR sensor | OUT | Direct | **GP15** (pin 20) |
+| SG90 servo | SIG (orange) | Shifter HV3 → LV3 | **GP16** (pin 21) |
+| SG90 servo | V+ (red) / GND (brown) | External 5 V / GND | — / GND |
+| Green LED | Anode via 220 Ω | Direct | **GP28** (pin 34) |
+| Red LED | Anode via 220 Ω | Direct | **GP27** (pin 32) |
+
+> ⚠️ **Common ground is required.** Connect the external 5 V supply's − terminal to a Pico GND pin. Never connect HC-SR04 ECHO straight to the Pico: it outputs 5 V.
+
+[`docs/circuit-design.html`](docs/circuit-design.html) has the full schematic, power budget and design notes. Download it and open it in a browser.
+
+---
+
+## How it works
+
+```
+             ┌──────────────── every 100 ms ────────────────┐
+IR sensor ──►│ debounce (3 equal reads) ──► spot FREE/TAKEN │──► LEDs
+             │                                              │
+HC-SR04 ────►│ distance < 10 cm on 2 reads ──► car at gate  │
+             │                                              │
+             │ Gate state machine                           │──► Servo
+             │   CLOSED ─ car at gate & spot free ─► OPEN   │
+             │   CLOSED ─ car at gate & spot taken ─► FULL  │
+             │   OPEN ── no car for 3 s ──────────► CLOSED  │
+             └──────────────────────────────────────────────┘──► OLED + serial log
+```
+
+The gate stays open while a car is still under the barrier, and closes 3 seconds after it has passed.
+
+---
+
+## Project structure
 
 | File | Purpose |
 |---|---|
-| `main.py` | Main application (runs on boot) |
-| `hcsr04.py`, `ssd1306.py` | Sensor and display drivers |
-| `test_leds.py`, `test_ir.py`, `test_ultrasonic.py`, `test_servo.py`, `test_oled.py` | Individual component tests |
-| `test_servo_calibrate.py` | Finds the servo's real pulse range |
+| `main.py` | Main application. Runs automatically when the Pico boots |
+| `hcsr04.py` | HC-SR04 ultrasonic sensor driver |
+| `ssd1306.py` | SSD1306 OLED driver |
+| `test_leds.py` | Blinks the green and red LEDs |
+| `test_ir.py` | Prints IR detections and lights the matching LED |
+| `test_ultrasonic.py` | Prints the measured distance and flags "CAR AT GATE" |
+| `test_servo.py` | Sweeps the servo, then cycles the gate open and closed |
+| `test_servo_calibrate.py` | Steps through pulse widths to find the servo's real range |
+| `test_oled.py` | Scans the I2C bus and draws a test screen |
+| `docs/circuit-design.html` | Schematic, pin map, power budget and bill of materials |
 
-## Running
+---
 
-Use the **MicroPico** VS Code extension: *Upload project to Pico*, then *Run current file on Pico*.
-Running with desktop Python fails with `No module named 'machine'`.
+## Getting started
+
+1. **Flash MicroPython:** hold **BOOTSEL**, plug the Pico in, and drag the Pico W `.uf2` file from [micropython.org](https://micropython.org/download/RPI_PICO_W/) onto the drive that appears.
+2. **Install the MicroPico extension** in VS Code and open this folder.
+3. **Connect:** the status bar should say *Pico Connected*.
+4. **Upload:** right-click the folder and choose **Upload project to Pico**.
+5. **Test each part:** open a `test_*.py` file and choose **MicroPico: Run current file on Pico**.
+6. **Run the system:** run `main.py`, or reset the Pico and it starts on its own.
+
+> Running these files with desktop Python (VS Code's ▶ button) fails with `ModuleNotFoundError: No module named 'machine'`. Always use MicroPico's **Run**.
+
+---
+
+## Configuration
+
+All settings are constants at the top of `main.py`:
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `GATE_TRIGGER_CM` | `10` | Distance that counts as a car at the gate |
+| `GATE_OPEN_MS` | `3000` | How long the gate stays open after the car has passed |
+| `SERVO_CLOSED_DEG` / `SERVO_OPEN_DEG` | `0` / `90` | Barrier angles |
+| `PULSE_MIN_US` / `PULSE_MAX_US` | `500` / `2500` | Servo pulse range. Set these from `test_servo_calibrate.py` |
+| `IR_ACTIVE_LOW` | `True` | Set to `False` if your IR module outputs HIGH when it detects something |
+| `BLOCK_WHEN_FULL` | `True` | Keep the gate closed when the spot is taken |
+| `IR_SAMPLES` / `GATE_SAMPLES` | `3` / `2` | Debounce counts |
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+|---|---|
+| `No module named 'machine'` | The file ran on the PC. Use MicroPico's *Run current file on Pico* |
+| Servo slow, weak or jittery | Weak 5 V supply or no common ground. Use a supply of 1 A or more, join the grounds, and add a 470 µF capacitor |
+| Servo moves less than expected | Pulse range doesn't match your servo. Run `test_servo_calibrate.py` |
+| Ultrasonic works in the test but not in `main.py` | The servo is pulling down the shared 5 V rail. Fix the servo power as above |
+| OLED blank | Check SDA/SCL. `test_oled.py` prints the I2C address it finds (0x3C or 0x3D) |
+| Spot status inverted | Change `IR_ACTIVE_LOW` |
+| IR always or never detects | Turn the sensor's potentiometer to adjust its range |
+
+---
+
+## Known limitations and future work
+
+- **Exit handling:** the gate opens only for cars approaching the ultrasonic sensor. An exit trigger is planned: either open the gate when the IR sensor shows the spot has emptied, or add an exit button.
+- Single parking spot. More IR sensors and a car counter would scale it to a multi-spot car park.
+- The Pico W's Wi-Fi isn't used yet. It could publish the spot status to a web page.

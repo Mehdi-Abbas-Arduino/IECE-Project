@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Parking Wiring</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: engineering sheet — title block, full-width schematic on drafting grid, then reference tables */
+:root {
+  --bg: #F3F5F4;
+  --paper: #FBFCFB;
+  --ink: #18222B;
+  --muted: #5C6B73;
+  --line: #D3DBD8;
+  --grid: #E6ECE9;
+  --accent: #0B6E5F;
+  --wire: #2A3A46;
+  --v5: #C2362B;
+  --v3: #C8741A;
+  --gnd: #56626B;
+  --led-g: #1E9E4A;
+  --led-r: #D23A2E;
+  --chip: #EAF1EE;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1316; --paper: #131A1E; --ink: #DCE4E8; --muted: #8E9DA5; --line: #2A363C;
+    --grid: #1A2328; --accent: #4CC7AE; --wire: #B9C7CF; --v5: #F0675B; --v3: #EFA24E;
+    --gnd: #95A3AB; --led-g: #4CD07A; --led-r: #F0675B; --chip: #1A2529; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1316; --paper: #131A1E; --ink: #DCE4E8; --muted: #8E9DA5; --line: #2A363C;
+  --grid: #1A2328; --accent: #4CC7AE; --wire: #B9C7CF; --v5: #F0675B; --v3: #EFA24E;
+  --gnd: #95A3AB; --led-g: #4CD07A; --led-r: #F0675B; --chip: #1A2529; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.01em; }
+h2 { font-size: 22px; }
+h3 { font-size: 16px; }
+p { margin: 0; max-width: 68ch; }
+.mono { font-family: var(--font-mono); }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+
+/* title block */
+.titleblock { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end; border-bottom: 2px solid var(--ink); padding-bottom: 20px; }
+.titleblock .intro { display: grid; gap: 10px; min-width: 0; }
+.meta { display: grid; grid-template-columns: auto auto; gap: 4px 16px; font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--line); background: var(--paper); padding: 10px 14px; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; }
+@media (max-width: 700px) { .titleblock { grid-template-columns: 1fr; } }
+
+section { display: grid; gap: 16px; }
+.sheet { background-color: var(--paper); border: 1px solid var(--line);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 20px 20px; overflow-x: auto; }
+.sheet svg { display: block; width: 100%; min-width: 900px; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 22px; height: 3px; display: inline-block; }
+
+/* svg styling */
+svg text { font-family: var(--font-mono); fill: var(--ink); font-size: 11px; }
+.box { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; }
+.pico { fill: var(--chip); stroke: var(--accent); stroke-width: 2; }
+.ttl { font-family: var(--font-display); font-weight: 600; font-size: 14px; }
+.sub { fill: var(--muted); font-size: 10px; }
+.pn { fill: var(--muted); font-size: 9px; }
+.pname { font-size: 10px; fill: var(--muted); }
+.pname.used { fill: var(--accent); font-weight: 600; }
+.w { stroke: var(--wire); stroke-width: 2; fill: none; }
+.w5 { stroke: var(--v5); stroke-width: 2; fill: none; }
+.w3 { stroke: var(--v3); stroke-width: 2; fill: none; }
+.wg { stroke: var(--gnd); stroke-width: 2; fill: none; }
+.stub { stroke: var(--muted); stroke-width: 1.5; }
+.stub.used { stroke: var(--accent); stroke-width: 2; }
+.dot { fill: var(--wire); }
+.flag5 { fill: var(--v5); } .flag3 { fill: var(--v3); }
+.flagtxt { fill: var(--paper); font-size: 10px; font-weight: 600; }
+.wlabel { fill: var(--accent); font-size: 10px; }
+.screen { fill: var(--ink); }
+.screentxt { fill: var(--paper); font-size: 10px; }
+.res { fill: var(--paper); stroke: var(--wire); stroke-width: 2; }
+.ledg { fill: var(--led-g); stroke: var(--wire); stroke-width: 1.5; }
+.ledr { fill: var(--led-r); stroke: var(--wire); stroke-width: 1.5; }
+.ray { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+.xdcr { fill: var(--grid); stroke: var(--ink); stroke-width: 1.5; }
+
+/* tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 720px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+td.mono { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.grp td { background: var(--chip); font-family: var(--font-display); font-weight: 600; }
+tbody tr:last-child td { border-bottom: 0; }
+.net { display: inline-block; font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 3px; color: var(--paper); }
+.n5 { background: var(--v5); } .n3 { background: var(--v3); } .ng { background: var(--gnd); }
+
+/* rails */
+.rails { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 860px) { .rails { grid-template-columns: 1fr; } }
+.rail { background: var(--paper); border: 1px solid var(--line); border-top: 4px solid var(--c); padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.rail ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.rail .budget { font-family: var(--font-mono); font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+
+.notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .notes { grid-template-columns: 1fr; } }
+.note { border-left: 2px solid var(--accent); padding: 4px 0 4px 16px; display: grid; gap: 6px; min-width: 0; }
+.note code, td code, p code { font-family: var(--font-mono); font-size: 0.88em; background: var(--chip); padding: 1px 5px; border-radius: 3px; }
+
+.checklist { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: c; }
+.checklist li { counter-increment: c; display: grid; grid-template-columns: 32px 1fr; gap: 8px; }
+.checklist li::before { content: counter(c); font-family: var(--font-mono); font-size: 12px; color: var(--paper); background: var(--ink); width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; }
+.warn { border: 1px solid var(--v5); background: var(--paper); padding: 12px 16px; display: grid; gap: 4px; }
+.warn strong { color: var(--v5); font-family: var(--font-display); }
+</style>
+
+<div class="wrap">
+
+<header class="titleblock">
+  <div class="intro">
+    <div class="eyebrow">IECE Project · Circuit design</div>
+    <h1>Smart Parking System</h1>
+    <p>Full wiring for the Raspberry Pi Pico W build. An HC-SR04 at the entrance opens an SG90 servo barrier when a car arrives. An IR sensor checks whether the parking spot is taken, the green and red LEDs show that, and an SSD1306 OLED shows the live status.</p>
+  </div>
+  <dl class="meta">
+    <dt>MCU</dt><dd>Raspberry Pi Pico W</dd>
+    <dt>Firmware</dt><dd>MicroPython · main.py</dd>
+    <dt>Logic</dt><dd>3.3 V</dd>
+    <dt>Rails</dt><dd>USB 5 V · 3V3 · Ext 5 V</dd>
+    <dt>Sheet</dt><dd>1 of 1 · rev A</dd>
+  </dl>
+</header>
+
+<section>
+  <div class="eyebrow">Schematic</div>
+  <h2>Wiring diagram</h2>
+  <p>Signal wires are drawn in full. Power and ground use net flags: every <span class="net n3">3V3</span> flag joins the Pico's 3V3(OUT) pin, every <span class="net n5">5V EXT</span> flag joins the external supply's + terminal, and every ground symbol joins one common ground.</p>
+  <div class="sheet">
+    <svg id="sch" viewBox="0 0 1040 690" role="img" aria-label="Schematic of the smart parking circuit">
+      <!-- ===== HC-SR04 ===== -->
+      <rect class="box" x="30" y="40" width="150" height="140" rx="4"/>
+      <text class="ttl" x="40" y="60">HC-SR04</text>
+      <circle class="xdcr" cx="62" cy="102" r="15"/>
+      <circle class="xdcr" cx="62" cy="148" r="15"/>
+      <text x="172" y="89" text-anchor="end">VCC</text>
+      <text x="172" y="114" text-anchor="end">TRIG</text>
+      <text x="172" y="139" text-anchor="end">ECHO</text>
+      <text x="172" y="164" text-anchor="end">GND</text>
+
+      <!-- HC-SR04 to shifter HV side -->
+      <path class="w5" d="M180 85 H230"/>
+      <path class="w" d="M180 110 H230"/>
+      <path class="w" d="M180 135 H230"/>
+      <path class="wg" d="M180 160 H230"/>
+
+      <!-- ===== Level shifter ===== -->
+      <rect class="box" x="230" y="40" width="150" height="140" rx="4"/>
+      <text class="ttl" x="305" y="58" text-anchor="middle">Level shifter</text>
+      <text class="sub" x="305" y="71" text-anchor="middle">4-ch BSS138 · ch 1–2</text>
+      <text x="238" y="89">HV</text>
+      <text x="238" y="114">HV1</text>
+      <text x="238" y="139">HV2</text>
+      <text x="238" y="164">GND</text>
+      <text x="372" y="89" text-anchor="end">LV</text>
+      <text x="372" y="114" text-anchor="end">LV1</text>
+      <text x="372" y="139" text-anchor="end">LV2</text>
+      <text x="372" y="164" text-anchor="end">GND</text>
+
+      <!-- shifter LV side to Pico -->
+      <path class="w" d="M380 110 H420 V204 H425"/>
+      <path class="w" d="M380 135 H410 V228 H425"/>
+
+      <!-- ===== OLED ===== -->
+      <rect class="box" x="230" y="232" width="150" height="112" rx="4"/>
+      <text class="ttl" x="240" y="256">SSD1306 OLED</text>
+      <text class="sub" x="240" y="272">I2C0 · addr 0x3C</text>
+      <text x="372" y="256" text-anchor="end">SDA</text>
+      <text x="372" y="280" text-anchor="end">SCL</text>
+      <text x="238" y="304">VCC</text>
+      <text x="238" y="328">GND</text>
+      <rect class="screen" x="272" y="288" width="98" height="46" rx="2"/>
+      <text class="screentxt" x="321" y="308" text-anchor="middle">SMART</text>
+      <text class="screentxt" x="321" y="322" text-anchor="middle">PARKING</text>
+      <path class="w" d="M380 252 H425"/>
+      <path class="w" d="M380 276 H425"/>
+
+      <!-- ===== IR sensor ===== -->
+      <rect class="box" x="230" y="530" width="150" height="112" rx="4"/>
+      <text class="ttl" x="240" y="552">IR sensor</text>
+      <text class="sub" x="240" y="566">FC-51 / MH-B · active-low</text>
+      <text x="372" y="592" text-anchor="end">OUT</text>
+      <text x="238" y="604">VCC</text>
+      <text x="238" y="628">GND</text>
+      <circle cx="318" cy="618" r="9" style="fill:var(--grid);stroke:var(--ink);stroke-width:1.5"/>
+      <circle cx="346" cy="618" r="9" style="fill:var(--ink)"/>
+      <path class="w" d="M380 588 H425"/>
+      <text class="wlabel" x="402" y="582" text-anchor="middle">OUT</text>
+
+      <!-- ===== Pico ===== -->
+      <rect x="522" y="96" width="56" height="18" rx="2" class="box"/>
+      <text class="sub" x="550" y="109" text-anchor="middle">USB</text>
+      <rect class="pico" x="440" y="112" width="220" height="496" rx="8"/>
+      <text class="ttl" transform="translate(556 360) rotate(-90)" text-anchor="middle" style="fill:var(--accent)">RASPBERRY PI PICO W</text>
+      <g id="picopins"></g>
+
+      <!-- ===== Right side: LEDs ===== -->
+      <!-- GP28 green -->
+      <path class="w" d="M675 276 H700 M750 276 H790 M810 276 H840"/>
+      <rect class="res" x="700" y="269" width="50" height="14" rx="2"/>
+      <text class="sub" x="725" y="262" text-anchor="middle">220 Ω</text>
+      <polygon class="ledg" points="790,264 790,288 810,276"/>
+      <path class="w" d="M810 264 V288"/>
+      <path class="ray" d="M800 262 l7 -9 M806 266 l7 -9"/>
+      <text x="866" y="280">Green LED · spot free</text>
+      <!-- GP27 red -->
+      <path class="w" d="M675 324 H700 M750 324 H790 M810 324 H840"/>
+      <rect class="res" x="700" y="317" width="50" height="14" rx="2"/>
+      <text class="sub" x="725" y="310" text-anchor="middle">220 Ω</text>
+      <polygon class="ledr" points="790,312 790,336 810,324"/>
+      <path class="w" d="M810 312 V336"/>
+      <path class="ray" d="M800 310 l7 -9 M806 314 l7 -9"/>
+      <text x="866" y="328">Red LED · spot taken</text>
+
+      <!-- ===== External 5 V supply ===== -->
+      <rect class="box" x="840" y="398" width="170" height="90" rx="4"/>
+      <text class="ttl" x="925" y="418" text-anchor="middle">External 5 V</text>
+      <text class="sub" x="925" y="432" text-anchor="middle">≥ 1 A, powers servo + HC-SR04</text>
+      <text x="852" y="452">+</text>
+      <text x="852" y="476">−</text>
+      <path class="w5" d="M820 448 H840"/>
+      <path class="wg" d="M820 472 H840"/>
+
+      <!-- ===== Servo ===== -->
+      <!-- level shifter, channel 3 (same board as the HC-SR04 channels) -->
+      <rect class="box" x="695" y="566" width="110" height="74" rx="4"/>
+      <text class="sub" x="720" y="580" text-anchor="middle">LV</text>
+      <text class="sub" x="780" y="580" text-anchor="middle">HV</text>
+      <text x="703" y="592">LV3</text>
+      <text x="797" y="592" text-anchor="end">HV3</text>
+      <text class="ttl" x="750" y="614" text-anchor="middle">Shifter</text>
+      <text class="sub" x="750" y="630" text-anchor="middle">channel 3</text>
+      <path class="w" d="M675 588 H695"/>
+      <text class="wlabel" x="685" y="580" text-anchor="middle">3.3 V</text>
+
+      <text class="ttl" x="880" y="550">SG90 servo · gate</text>
+      <rect class="box" x="880" y="562" width="150" height="96" rx="4"/>
+      <text x="892" y="592">SIG · orange</text>
+      <text x="892" y="616">V+ · red</text>
+      <text x="892" y="640">GND · brown</text>
+      <rect x="988" y="600" width="30" height="50" rx="4" style="fill:var(--grid);stroke:var(--ink);stroke-width:1.5"/>
+      <circle cx="1003" cy="613" r="5" style="fill:var(--ink)"/>
+      <path class="w" d="M805 588 H880"/>
+      <text class="wlabel" x="842" y="582" text-anchor="middle">5 V PWM</text>
+      <path class="w5" d="M866 612 H880"/>
+      <path class="wg" d="M866 636 H880"/>
+
+      <g id="power"></g>
+    </svg>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--wire)"></i>Signal</span>
+    <span><i style="background:var(--v5)"></i>5 V external</span>
+    <span><i style="background:var(--v3)"></i>3.3 V from Pico</span>
+    <span><i style="background:var(--gnd)"></i>Ground (common)</span>
+    <span><i style="background:var(--accent)"></i>Pico pin in use</span>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Connections</div>
+  <h2>Pin-by-pin wiring</h2>
+  <p>Physical pin numbers count around the Pico from pin 1 (top-left, next to USB) down to 20, then from 21 (bottom-right) back up to 40. These GPIOs match the constants at the top of <code>main.py</code> and the test scripts.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Component pin</th><th>Connects to</th><th>Pico pin</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr class="grp"><td colspan="4">HC-SR04 ultrasonic (gate)</td></tr>
+        <tr><td class="mono">VCC</td><td><span class="net n5">5V EXT</span> and shifter HV</td><td class="mono">—</td><td>Needs 5 V to range reliably</td></tr>
+        <tr><td class="mono">TRIG</td><td>Shifter HV1 → LV1 → GP2</td><td class="mono">GP2 · pin 4</td><td>10 µs trigger pulse</td></tr>
+        <tr><td class="mono">ECHO</td><td>Shifter HV2 → LV2 → GP3</td><td class="mono">GP3 · pin 5</td><td>5 V output. Must go through the shifter</td></tr>
+        <tr><td class="mono">GND</td><td><span class="net ng">GND</span></td><td class="mono">pin 38</td><td></td></tr>
+
+        <tr class="grp"><td colspan="4">Logic level shifter</td></tr>
+        <tr><td class="mono">HV</td><td><span class="net n5">5V EXT</span></td><td class="mono">—</td><td>High-voltage reference</td></tr>
+        <tr><td class="mono">LV</td><td><span class="net n3">3V3</span></td><td class="mono">3V3(OUT) · pin 36</td><td>Low-voltage reference</td></tr>
+        <tr><td class="mono">LV3 / HV3</td><td>GP16 ↔ servo SIG</td><td class="mono">GP16 · pin 21</td><td>Channel 3 lifts the servo PWM from 3.3 V to 5 V</td></tr>
+        <tr><td class="mono">LV4 / HV4</td><td>Not connected</td><td class="mono">—</td><td>Spare channel</td></tr>
+        <tr><td class="mono">GND (both)</td><td><span class="net ng">GND</span></td><td class="mono">pin 38</td><td></td></tr>
+
+        <tr class="grp"><td colspan="4">SSD1306 OLED 128×64</td></tr>
+        <tr><td class="mono">VCC</td><td><span class="net n3">3V3</span></td><td class="mono">pin 36</td><td></td></tr>
+        <tr><td class="mono">GND</td><td><span class="net ng">GND</span></td><td class="mono">pin 38</td><td></td></tr>
+        <tr><td class="mono">SDA</td><td>GP4 (I2C0 SDA)</td><td class="mono">GP4 · pin 6</td><td>Pull-ups are on the module</td></tr>
+        <tr><td class="mono">SCL</td><td>GP5 (I2C0 SCL)</td><td class="mono">GP5 · pin 7</td><td></td></tr>
+
+        <tr class="grp"><td colspan="4">IR obstacle sensor (parking spot)</td></tr>
+        <tr><td class="mono">VCC</td><td><span class="net n3">3V3</span></td><td class="mono">pin 36</td><td>At 3.3 V the output is safe for the Pico</td></tr>
+        <tr><td class="mono">GND</td><td><span class="net ng">GND</span></td><td class="mono">pin 38</td><td></td></tr>
+        <tr><td class="mono">OUT</td><td>GP15</td><td class="mono">GP15 · pin 20</td><td>LOW = car detected</td></tr>
+
+        <tr class="grp"><td colspan="4">SG90 servo (barrier)</td></tr>
+        <tr><td class="mono">SIG (orange)</td><td>Shifter HV3 → LV3 → GP16</td><td class="mono">GP16 · pin 21</td><td>50 Hz PWM, 0.5–2.5 ms pulse, 5 V after the shifter</td></tr>
+        <tr><td class="mono">V+ (red)</td><td><span class="net n5">5V EXT</span></td><td class="mono">—</td><td>Never from the Pico's 3V3</td></tr>
+        <tr><td class="mono">GND (brown)</td><td><span class="net ng">GND</span></td><td class="mono">pin 38</td><td>Must share ground with the Pico</td></tr>
+
+        <tr class="grp"><td colspan="4">Status LEDs</td></tr>
+        <tr><td class="mono">Green anode (long leg)</td><td>220 Ω → GP28</td><td class="mono">GP28 · pin 34</td><td>On when the spot is free</td></tr>
+        <tr><td class="mono">Red anode (long leg)</td><td>220 Ω → GP27</td><td class="mono">GP27 · pin 32</td><td>On when the spot is taken</td></tr>
+        <tr><td class="mono">Both cathodes</td><td><span class="net ng">GND</span></td><td class="mono">pin 33 / 38</td><td>Short leg, flat side of the LED</td></tr>
+
+        <tr class="grp"><td colspan="4">External 5 V supply</td></tr>
+        <tr><td class="mono">+</td><td><span class="net n5">5V EXT</span> rail</td><td class="mono">—</td><td>Servo V+, HC-SR04 VCC, shifter HV</td></tr>
+        <tr><td class="mono">−</td><td><span class="net ng">GND</span> rail</td><td class="mono">pin 38</td><td>Tie to Pico GND</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Power</div>
+  <h2>Power rails and current budget</h2>
+  <div class="rails">
+    <div class="rail" style="--c:var(--accent)">
+      <h3>USB 5 V → Pico</h3>
+      <p>The Pico runs from its USB cable, which also carries the serial console. Its on-board regulator makes the 3V3 rail.</p>
+      <div class="budget">Pico W ≈ 50–100 mA with Wi-Fi off</div>
+    </div>
+    <div class="rail" style="--c:var(--v3)">
+      <h3>3V3(OUT) · pin 36</h3>
+      <ul>
+        <li>OLED ≈ 20 mA</li>
+        <li>IR sensor ≈ 20 mA</li>
+        <li>Level shifter LV ≈ 0 mA</li>
+      </ul>
+      <div class="budget">Total ≈ 40 mA of the 300 mA available</div>
+    </div>
+    <div class="rail" style="--c:var(--v5)">
+      <h3>External 5 V</h3>
+      <ul>
+        <li>SG90 servo: 100–250 mA moving, ~650 mA stalled</li>
+        <li>HC-SR04 ≈ 15 mA</li>
+        <li>Level shifter HV ≈ 0 mA</li>
+      </ul>
+      <div class="budget">Use a supply rated 1 A or more</div>
+    </div>
+  </div>
+  <div class="warn">
+    <strong>Common ground is required</strong>
+    <p>Connect the external supply's − terminal to a Pico GND pin. Without a shared ground the servo jitters and the ultrasonic readings come out as noise. Don't connect the external 5 V to VBUS while USB is plugged in.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Design notes</div>
+  <h2>Why it's wired this way</h2>
+  <div class="notes">
+    <div class="note">
+      <h3>Level shifter on the HC-SR04</h3>
+      <p>The HC-SR04 runs at 5 V and its ECHO pin outputs 5 V. Pico GPIOs are rated for 3.3 V, so ECHO goes through the BSS138 shifter. TRIG goes through it too, so the 3.3 V trigger becomes a clean 5 V pulse.</p>
+    </div>
+    <div class="note">
+      <h3>LED resistors</h3>
+      <p>I = (3.3 V − V<sub>f</sub>) / 220 Ω. Green (V<sub>f</sub> ≈ 2.1 V) draws about 5.5 mA and red (V<sub>f</sub> ≈ 1.9 V) about 6.4 mA. Both are well under the Pico's 12 mA per-pin limit and bright enough indoors.</p>
+    </div>
+    <div class="note">
+      <h3>Servo signal through the shifter</h3>
+      <p>GP16's 3.3 V PWM goes through channel 3 of the same level shifter, so the servo gets a full 5 V signal that matches its 5 V supply. This stops the jitter some SG90s show with a 3.3 V signal. The shifter doesn't change the timing, so <code>main.py</code> needs no changes. 0° (closed) is a 0.5 ms pulse (<code>duty_u16 ≈ 1638</code>) and 90° (open) is 1.5 ms (<code>≈ 4915</code>). A 470 µF capacitor across the servo's V+ and GND smooths current spikes.</p>
+    </div>
+    <div class="note">
+      <h3>IR sensor at 3.3 V</h3>
+      <p>Powering the IR module from 3V3 keeps its OUT pin at Pico-safe levels. The module's on-board LED lights when it detects something. Turn its potentiometer until a car in the spot triggers it and an empty spot doesn't.</p>
+    </div>
+    <div class="note">
+      <h3>OLED on I2C0</h3>
+      <p>GP4 and GP5 are the default I2C0 pins. Most 0.96″ modules sit at address 0x3C. Some are 0x3D, and <code>test_oled.py</code> prints the address it finds.</p>
+    </div>
+    <div class="note">
+      <h3>Sensor placement</h3>
+      <p>Mount the HC-SR04 at the entrance facing the approach lane. It opens the gate when something is closer than 10 cm (<code>GATE_TRIGGER_CM</code>). Mount the IR sensor at the back of the spot, facing where the car stops.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Parts</div>
+  <h2>Bill of materials</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Qty</th><th>Part</th><th>Spec</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">1</td><td>Raspberry Pi Pico W</td><td>RP2040, MicroPython</td><td>Controller</td></tr>
+        <tr><td class="mono">1</td><td>HC-SR04 ultrasonic sensor</td><td>5 V, 2–400 cm</td><td>Detects a car at the gate</td></tr>
+        <tr><td class="mono">1</td><td>IR obstacle sensor</td><td>FC-51 / MH-B, 3.3–5 V</td><td>Detects a car in the spot</td></tr>
+        <tr><td class="mono">1</td><td>SG90 micro servo</td><td>4.8–6 V, 180°</td><td>Barrier arm</td></tr>
+        <tr><td class="mono">1</td><td>SSD1306 OLED</td><td>0.96″ 128×64, I2C</td><td>Status display</td></tr>
+        <tr><td class="mono">1</td><td>Logic level converter</td><td>4-ch BSS138, bidirectional</td><td>5 V ↔ 3.3 V for the HC-SR04 (ch 1–2) and servo (ch 3)</td></tr>
+        <tr><td class="mono">1</td><td>LED, green</td><td>5 mm</td><td>Spot free</td></tr>
+        <tr><td class="mono">1</td><td>LED, red</td><td>5 mm</td><td>Spot taken</td></tr>
+        <tr><td class="mono">2</td><td>Resistor</td><td>220 Ω, ¼ W</td><td>LED current limit</td></tr>
+        <tr><td class="mono">1</td><td>5 V power supply</td><td>≥ 1 A (USB brick, 4×AA or buck module)</td><td>Servo and HC-SR04 power</td></tr>
+        <tr><td class="mono">1</td><td>Electrolytic capacitor (optional)</td><td>470 µF, ≥ 10 V</td><td>Servo supply decoupling</td></tr>
+        <tr><td class="mono">—</td><td>Breadboard + jumper wires</td><td>M-M, M-F</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Bring-up</div>
+  <h2>Before you power it on</h2>
+  <ol class="checklist">
+    <li><span>With nothing powered, check that external 5 V and 3V3 are not shorted to each other or to GND.</span></li>
+    <li><span>Confirm the external supply's − terminal is wired to a Pico GND pin.</span></li>
+    <li><span>Check the LED polarity: long leg (anode) to the resistor, short leg to GND.</span></li>
+    <li><span>Confirm ECHO reaches GP3 only through the level shifter, never directly. Check that the servo SIG wire goes to HV3, not straight to GP16.</span></li>
+    <li><span>Run each test script on its own: <code>test_leds.py</code>, <code>test_ir.py</code>, <code>test_ultrasonic.py</code>, <code>test_servo.py</code>, <code>test_oled.py</code>.</span></li>
+    <li><span>Once every part passes, run <code>main.py</code>.</span></li>
+  </ol>
+</section>
+
+</div>
+
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, parent, text) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    parent.appendChild(e);
+    return e;
+  }
+  var left = ["GP0","GP1","GND","GP2","GP3","GP4","GP5","GND","GP6","GP7","GP8","GP9","GND","GP10","GP11","GP12","GP13","GND","GP14","GP15"];
+  var right = {21:"GP16",22:"GP17",23:"GND",24:"GP18",25:"GP19",26:"GP20",27:"GP21",28:"GND",29:"GP22",30:"RUN",31:"GP26",32:"GP27",33:"GND",34:"GP28",35:"ADC_VREF",36:"3V3(OUT)",37:"3V3_EN",38:"GND",39:"VSYS",40:"VBUS"};
+  var used = {4:1,5:1,6:1,7:1,20:1,21:1,32:1,34:1,36:1,38:1,40:1};
+  var g = document.getElementById("picopins");
+  for (var i = 1; i <= 20; i++) {
+    var y = 132 + (i - 1) * 24, u = used[i] ? " used" : "";
+    el("line", {x1: 425, y1: y, x2: 440, y2: y, "class": "stub" + u}, g);
+    el("text", {x: 446, y: y + 3, "class": "pn"}, g, i);
+    el("text", {x: 462, y: y + 4, "class": "pname" + u}, g, left[i - 1]);
+  }
+  for (var p = 21; p <= 40; p++) {
+    var yr = 132 + (40 - p) * 24, ur = used[p] ? " used" : "";
+    el("line", {x1: 660, y1: yr, x2: 675, y2: yr, "class": "stub" + ur}, g);
+    el("text", {x: 654, y: yr + 3, "class": "pn", "text-anchor": "end"}, g, p);
+    el("text", {x: 636, y: yr + 4, "class": "pname" + ur, "text-anchor": "end"}, g, right[p]);
+  }
+
+  var pw = document.getElementById("power");
+  function gnd(x, y) {
+    el("path", {d: "M" + x + " " + y + " v12 M" + (x - 9) + " " + (y + 12) + " h18 M" + (x - 6) + " " + (y + 16) + " h12 M" + (x - 3) + " " + (y + 20) + " h6", "class": "wg"}, pw);
+  }
+  function flag(x, y, label, net, dir) {
+    var w = label.length * 6.6 + 12, cls = net === "5" ? "flag5" : "flag3", wc = net === "5" ? "w5" : "w3";
+    if (dir === "r") {
+      el("path", {d: "M" + x + " " + y + " h8", "class": wc}, pw);
+      el("rect", {x: x + 8, y: y - 8, width: w, height: 16, rx: 3, "class": cls}, pw);
+      el("text", {x: x + 8 + w / 2, y: y + 4, "text-anchor": "middle", "class": "flagtxt"}, pw, label);
+    } else if (dir === "l") {
+      el("path", {d: "M" + x + " " + y + " h-8", "class": wc}, pw);
+      el("rect", {x: x - 8 - w, y: y - 8, width: w, height: 16, rx: 3, "class": cls}, pw);
+      el("text", {x: x - 8 - w / 2, y: y + 4, "text-anchor": "middle", "class": "flagtxt"}, pw, label);
+    } else {
+      el("path", {d: "M" + x + " " + y + " v-10", "class": wc}, pw);
+      el("rect", {x: x - w / 2, y: y - 26, width: w, height: 16, rx: 3, "class": cls}, pw);
+      el("text", {x: x, y: y - 14, "text-anchor": "middle", "class": "flagtxt"}, pw, label);
+    }
+  }
+  function dot(x, y) { el("circle", {cx: x, cy: y, r: 3.5, "class": "dot"}, pw); }
+
+  // HC-SR04 / shifter HV side
+  el("path", {d: "M205 85 V40", "class": "w5"}, pw); flag(205, 40, "5V EXT", "5", "u"); dot(205, 85);
+  el("path", {d: "M205 160 V196", "class": "wg"}, pw); gnd(205, 196); dot(205, 160);
+  // shifter LV side
+  el("path", {d: "M380 85 H388", "class": "w3"}, pw); flag(388, 85, "3V3", "3", "r");
+  el("path", {d: "M380 160 H394", "class": "wg"}, pw); gnd(394, 160);
+  // OLED power
+  el("path", {d: "M230 300 H212", "class": "w3"}, pw); flag(212, 300, "3V3", "3", "l");
+  el("path", {d: "M230 324 H200", "class": "wg"}, pw); gnd(200, 324);
+  // IR power
+  el("path", {d: "M230 600 H212", "class": "w3"}, pw); flag(212, 600, "3V3", "3", "l");
+  el("path", {d: "M230 624 H200", "class": "wg"}, pw); gnd(200, 624);
+  // Pico power pins
+  flag(675, 228, "3V3", "3", "r");
+  el("path", {d: "M675 180 H700", "class": "wg"}, pw); gnd(700, 180);
+  el("path", {d: "M675 132 H683", "class": "w"}, pw);
+  el("text", {x: 690, y: 136, "class": "sub"}, pw, "USB 5 V in");
+  // LED cathodes
+  gnd(840, 276); gnd(840, 324);
+  // ext supply
+  flag(820, 448, "5V EXT", "5", "l");
+  gnd(820, 472);
+  // servo power
+  flag(866, 612, "5V EXT", "5", "l");
+  gnd(866, 636);
+  // servo level shifter (channel 3) power pins on top, ground at bottom
+  el("path", {d: "M720 566 V552", "class": "w3"}, pw); flag(720, 552, "3V3", "3", "u");
+  el("path", {d: "M780 566 V552", "class": "w5"}, pw); flag(780, 552, "5V EXT", "5", "u");
+  el("path", {d: "M750 640 V644", "class": "wg"}, pw); gnd(750, 644);
+})();
+</script>

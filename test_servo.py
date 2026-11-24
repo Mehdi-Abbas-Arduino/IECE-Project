@@ -18,7 +18,7 @@ PERIOD_US = 1_000_000 // FREQ_HZ
 def set_angle(deg):
     deg = max(0, min(180, deg))
     pulse_us = PULSE_MIN_US + (deg / 180) * (PULSE_MAX_US - PULSE_MIN_US)
-    servo.duty_u16(int(pulse_us / PERIOD_US * 65535))
+    servo.duty_u16(70)
     return pulse_us
 
 

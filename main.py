@@ -1,15 +1,25 @@
-# Smart Parking System - Raspberry Pi Pico (MicroPython)
+# Smart Parking System - Raspberry Pi Pico W (MicroPython)
 #
 #   HC-SR04 ultrasonic  -> detects a car at the GATE, opens the servo barrier
 #   IR obstacle sensor  -> detects a car in the PARKING SPOT
-#   Green LED = spot free, Red LED = spot occupied
+#   Green LED = spot free, Red LED = spot occupied, blinking red = reserved
 #   SSD1306 OLED (128x64, I2C) shows the live status
+#   Wi-Fi web app       -> book the spot, open the gate with a booking code
 #
-# Needs hcsr04.py and ssd1306.py on the Pico alongside this file.
+# Needs on the Pico alongside this file:
+#   hcsr04.py ssd1306.py clock.py booking.py wifi.py web.py www/index.html
+#   and optionally secrets.py (Wi-Fi name and password, see secrets_example.py)
 
 from machine import Pin, PWM, I2C
 import time
+try:
+    import asyncio
+except ImportError:
+    import uasyncio as asyncio
+
 from hcsr04 import HCSR04
+import clock
+from booking import Bookings
 
 # ---------------- Pin map (change to match your wiring) ----------------
 TRIG_PIN = 20
@@ -24,6 +34,7 @@ RED_LED_PIN = 27
 # ---------------- Settings ----------------
 GATE_TRIGGER_CM = 10      # car closer than this to the ultrasonic = car at gate
 GATE_OPEN_MS = 3000       # keep gate open this long after the car leaves the sensor
+REMOTE_OPEN_MS = 15000    # gate opened from the web app stays open at least this long
 SERVO_CLOSED_DEG = 0
 SERVO_OPEN_DEG = 90
 PULSE_MIN_US = 500        # pulse for 0 deg   (find yours with test_servo_calibrate.py)
@@ -33,6 +44,7 @@ BLOCK_WHEN_FULL = True    # don't open the gate if the spot is already taken
 IR_SAMPLES = 3            # consecutive equal IR reads needed to change state
 GATE_SAMPLES = 2          # consecutive "close" ultrasonic reads to count a car
 LOOP_MS = 100
+WEB_ENABLED = True        # set False to run without Wi-Fi / booking
 
 # ---------------- Hardware setup ----------------
 sensor = HCSR04(trigger_pin=TRIG_PIN, echo_pin=ECHO_PIN, echo_timeout_us=30000)
@@ -71,94 +83,157 @@ def read_distance():
         return None  # out of range / no echo
 
 
-def show(spot_occupied, gate_open, dist, full_blocked):
+def oled_message(*lines):
     if oled is None:
         return
     oled.fill(0)
-    oled.text("SMART PARKING", 12, 0)
-    oled.hline(0, 10, 128, 1)
-    oled.text("Spot: " + ("OCCUPIED" if spot_occupied else "FREE"), 0, 16)
-    oled.text("Gate: " + ("OPEN" if gate_open else "CLOSED"), 0, 28)
-    if dist is None or dist > 400:
-        oled.text("Dist: --", 0, 40)
-    else:
-        oled.text("Dist: %d cm" % dist, 0, 40)
-    if full_blocked:
-        oled.fill_rect(0, 52, 128, 12, 1)
-        oled.text("LOT FULL", 32, 54, 0)
+    for i, line in enumerate(lines):
+        oled.text(line, 0, i * 12)
     oled.show()
 
 
-def update_leds(occupied):
-    green.value(0 if occupied else 1)
-    red.value(1 if occupied else 0)
+class Controller:
+    def __init__(self, bookings):
+        self.bookings = bookings
+        self.ip = None
+        self.spot_occupied = ir_raw_occupied()
+        self.reserved = False
+        self.gate_open = False
+        self.gate_hold_until = 0      # ticks_ms; gate may close after this
+        self.remote_open = False      # set by the web app
+        self._ir_candidate = self.spot_occupied
+        self._ir_count = 0
+        self._near_count = 0
+        self._last_status = None
 
+    # Called from the web app
+    def open_gate(self):
+        self.remote_open = True
 
-# ---------------- Main loop ----------------
-def main():
-    spot_occupied = ir_raw_occupied()
-    ir_candidate, ir_count = spot_occupied, 0
-    gate_open = False
-    gate_last_seen = 0
-    near_count = 0
-    last_status = None
+    def _open(self, now, hold_ms):
+        if not self.gate_open:
+            self.gate_open = True
+            set_angle(SERVO_OPEN_DEG)
+        until = time.ticks_add(now, hold_ms)
+        if time.ticks_diff(until, self.gate_hold_until) > 0:
+            self.gate_hold_until = until
 
-    set_angle(SERVO_CLOSED_DEG)
-    update_leds(spot_occupied)
-    print("Smart Parking started.")
+    def _update_leds(self):
+        if self.spot_occupied:
+            green.value(0)
+            red.value(1)
+        elif self.reserved:
+            green.value(0)
+            red.value((time.ticks_ms() // 500) % 2)   # 1 Hz blink
+        else:
+            green.value(1)
+            red.value(0)
 
-    while True:
+    def _show(self, dist, banner):
+        if oled is None:
+            return
+        oled.fill(0)
+        oled.text("SMART PARKING", 12, 0)
+        oled.hline(0, 10, 128, 1)
+        spot = "OCCUPIED" if self.spot_occupied else ("RESERVED" if self.reserved else "FREE")
+        oled.text("Spot: " + spot, 0, 16)
+        oled.text("Gate: " + ("OPEN" if self.gate_open else "CLOSED"), 0, 28)
+        if self.ip:
+            oled.text(self.ip, 0, 40)
+        elif dist is None or dist > 400:
+            oled.text("Dist: --", 0, 40)
+        else:
+            oled.text("Dist: %d cm" % dist, 0, 40)
+        if banner:
+            oled.fill_rect(0, 52, 128, 12, 1)
+            oled.text(banner, (128 - len(banner) * 8) // 2, 54, 0)
+        oled.show()
+
+    def tick(self):
         now = time.ticks_ms()
+
+        # --- Bookings: is the spot reserved right now? ---
+        if clock.synced:
+            t = clock.now()
+            for b in self.bookings.tick(t):
+                print("Booking #%d ended" % b["id"])
+            self.reserved = self.bookings.active(t) is not None
+        else:
+            self.reserved = False
 
         # --- IR: debounced spot occupancy ---
         raw = ir_raw_occupied()
-        if raw == ir_candidate:
-            ir_count += 1
+        if raw == self._ir_candidate:
+            self._ir_count += 1
         else:
-            ir_candidate, ir_count = raw, 1
-        if ir_count >= IR_SAMPLES and ir_candidate != spot_occupied:
-            spot_occupied = ir_candidate
-            update_leds(spot_occupied)
+            self._ir_candidate, self._ir_count = raw, 1
+        if self._ir_count >= IR_SAMPLES and self._ir_candidate != self.spot_occupied:
+            self.spot_occupied = self._ir_candidate
 
         # --- Ultrasonic: car at gate? ---
         dist = read_distance()
         if dist is not None and 0 < dist < GATE_TRIGGER_CM:
-            near_count += 1
+            self._near_count += 1
         else:
-            near_count = 0
-        car_at_gate = near_count >= GATE_SAMPLES
+            self._near_count = 0
+        car_at_gate = self._near_count >= GATE_SAMPLES
 
         # --- Gate state machine ---
-        full_blocked = False
+        banner = None
+        if self.remote_open:
+            self.remote_open = False
+            self._open(now, REMOTE_OPEN_MS)
         if car_at_gate:
-            if gate_open:
-                gate_last_seen = now          # car still under the barrier
-            elif spot_occupied and BLOCK_WHEN_FULL:
-                full_blocked = True
+            if self.gate_open:
+                self._open(now, GATE_OPEN_MS)     # car still under the barrier
+            elif self.spot_occupied and BLOCK_WHEN_FULL:
+                banner = "LOT FULL"
+            elif self.reserved:
+                banner = "RESERVED"               # booked: open with code only
             else:
-                gate_open = True
-                gate_last_seen = now
-                set_angle(SERVO_OPEN_DEG)
-        elif gate_open and time.ticks_diff(now, gate_last_seen) > GATE_OPEN_MS:
-            gate_open = False
+                self._open(now, GATE_OPEN_MS)
+        elif self.gate_open and time.ticks_diff(now, self.gate_hold_until) > 0:
+            self.gate_open = False
             set_angle(SERVO_CLOSED_DEG)
 
         # --- Output ---
-        show(spot_occupied, gate_open, dist, full_blocked)
-        status = (spot_occupied, gate_open, full_blocked)
-        if status != last_status:
-            print("Spot:", "OCCUPIED" if spot_occupied else "FREE",
-                  "| Gate:", "OPEN" if gate_open else "CLOSED",
-                  "| LOT FULL" if full_blocked else "",
-                  "| Dist:", dist)
-            last_status = status
+        self._update_leds()
+        self._show(dist, banner)
+        status = (self.spot_occupied, self.reserved, self.gate_open, banner)
+        if status != self._last_status:
+            print("Spot:", "OCCUPIED" if self.spot_occupied else "FREE",
+                  "| Reserved" if self.reserved else "",
+                  "| Gate:", "OPEN" if self.gate_open else "CLOSED",
+                  "|", banner or "", "| Dist:", dist)
+            self._last_status = status
 
-        time.sleep_ms(LOOP_MS)
+    async def run(self):
+        set_angle(SERVO_CLOSED_DEG)
+        while True:
+            self.tick()
+            await asyncio.sleep_ms(LOOP_MS)
 
 
-try:
-    main()
-except KeyboardInterrupt:
+async def main():
+    ctl = Controller(Bookings("bookings.json"))
+    print("Smart Parking started.")
+
+    if WEB_ENABLED:
+        oled_message("SMART PARKING", "", "Starting Wi-Fi...")
+        try:
+            import wifi
+            from web import WebApp
+            ctl.ip = wifi.connect()
+            await WebApp(ctl, ctl.bookings).start()
+            print("Booking page: http://%s" % ctl.ip)
+        except Exception as e:
+            print("Web app disabled:", e)
+            ctl.ip = None
+
+    await ctl.run()
+
+
+def shutdown():
     set_angle(SERVO_CLOSED_DEG)
     time.sleep_ms(500)
     servo.deinit()
@@ -168,3 +243,11 @@ except KeyboardInterrupt:
         oled.fill(0)
         oled.show()
     print("Stopped.")
+
+
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    shutdown()
+finally:
+    asyncio.new_event_loop()

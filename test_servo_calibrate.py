@@ -6,7 +6,7 @@ from machine import Pin, PWM
 import time
 
 SERVO_PIN = 16
-FREQ_HZ = 50          # standard for SG90; try 50-60 only
+FREQ_HZ = 70          # standard for SG90; try 50-60 only
 STEP_US = 100
 HOLD_MS = 800
 

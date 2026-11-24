@@ -2,6 +2,7 @@
 from machine import Pin
 import time
 
+# CHANGE: keep these the same as in main.py
 GREEN_LED_PIN = 28
 RED_LED_PIN = 27
 

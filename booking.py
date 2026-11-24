@@ -10,12 +10,17 @@
 import json
 import os
 
-MIN_DURATION = 15 * 60          # shortest booking
-MAX_DURATION = 4 * 60 * 60      # longest booking
-MAX_AHEAD = 7 * 24 * 60 * 60    # how far ahead a booking can start
-EARLY_ACCESS = 10 * 60          # code opens the gate this long before the start
-NO_SHOW = 15 * 60               # release the spot if nobody arrives by start + this
-MAX_BOOKINGS = 30
+# ---------------- Booking rules (all values in seconds) ----------------
+# CHANGE these to suit the demo. The web page reads them from the Pico, so
+# only this file needs editing. Re-upload booking.py after changing.
+MIN_DURATION = 15 * 60          # CHANGE: shortest booking (15 min)
+MAX_DURATION = 4 * 60 * 60      # CHANGE: longest booking (4 h)
+MAX_AHEAD = 7 * 24 * 60 * 60    # how far ahead a booking can start (7 days)
+EARLY_ACCESS = 10 * 60          # CHANGE: the code opens the gate this long before the start (10 min)
+NO_SHOW = 15 * 60               # CHANGE: release a RESERVED spot back to FREE if nobody arrives
+                                #   by start + this. Tracker task 2.4 / test R2 asks for 60 s:
+                                #   set NO_SHOW = 60 for that test (and make a booking that starts now).
+MAX_BOOKINGS = 30               # most bookings stored at once (limited by the Pico's memory)
 NAME_MAX = 24
 PLATE_MAX = 10
 

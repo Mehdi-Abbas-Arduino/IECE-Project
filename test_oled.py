@@ -3,6 +3,7 @@ from machine import Pin, I2C
 import time
 from ssd1306 import SSD1306_I2C
 
+# CHANGE: keep these the same as in main.py (must be an I2C0 pin pair, e.g. GP4/GP5)
 I2C_SDA = 4
 I2C_SCL = 5
 

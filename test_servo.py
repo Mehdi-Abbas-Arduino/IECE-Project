@@ -3,12 +3,13 @@
 from machine import Pin, PWM
 import time
 
-SERVO_PIN = 16
-SERVO_CLOSED_DEG = 0
-SERVO_OPEN_DEG = 90
-PULSE_MIN_US = 500        # pulse for 0 deg   (find yours with test_servo_calibrate.py)
-PULSE_MAX_US = 2500       # pulse for 180 deg
-FREQ_HZ =       50        # standard for SG90
+# CHANGE: keep all of these the same as in main.py.
+SERVO_PIN = 16            # CHANGE: GPIO of the servo signal wire
+SERVO_CLOSED_DEG = 0      # CHANGE: barrier-down angle
+SERVO_OPEN_DEG = 90       # CHANGE: barrier-up angle
+PULSE_MIN_US = 500        # CHANGE: pulse for 0 deg   (find yours with test_servo_calibrate.py)
+PULSE_MAX_US = 2500       # CHANGE: pulse for 180 deg
+FREQ_HZ =       50        # leave at 50 Hz: SG90 servos expect a 20 ms period
 
 servo = PWM(Pin(SERVO_PIN))
 servo.freq(FREQ_HZ)

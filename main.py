@@ -21,30 +21,50 @@ from hcsr04 import HCSR04
 import clock
 from booking import Bookings
 
-# ---------------- Pin map (change to match your wiring) ----------------
-TRIG_PIN = 20
-ECHO_PIN = 19
-I2C_SDA = 4
-I2C_SCL = 5
-IR_PIN = 15
-SERVO_PIN = 16
-GREEN_LED_PIN = 28
-RED_LED_PIN = 27
+# =====================================================================
+#  SETTINGS YOU MAY NEED TO CHANGE BY HAND
+#  Everything marked  # CHANGE  below is a value you set to match your
+#  own wiring or hardware. Nothing else in this file needs editing.
+#  After changing anything, re-upload main.py to the Pico.
+# =====================================================================
 
-# ---------------- Settings ----------------
-GATE_TRIGGER_CM = 10      # car closer than this to the ultrasonic = car at gate
-GATE_OPEN_MS = 3000       # keep gate open this long after the car leaves the sensor
-REMOTE_OPEN_MS = 15000    # gate opened from the web app stays open at least this long
-SERVO_CLOSED_DEG = 0
-SERVO_OPEN_DEG = 90
-PULSE_MIN_US = 500        # pulse for 0 deg   (find yours with test_servo_calibrate.py)
-PULSE_MAX_US = 2500       # pulse for 180 deg
-IR_ACTIVE_LOW = True      # most IR modules output 0 when something is detected
-BLOCK_WHEN_FULL = True    # don't open the gate if the spot is already taken
-IR_SAMPLES = 3            # consecutive equal IR reads needed to change state
-GATE_SAMPLES = 2          # consecutive "close" ultrasonic reads to count a car
-LOOP_MS = 100
-WEB_ENABLED = True        # set False to run without Wi-Fi / booking
+# ---------------- Pin map ----------------
+# CHANGE: these are GPIO numbers (the "GPxx" label), NOT the physical pin
+# numbers 1-40 printed around the board. Each one must match the wire you
+# actually used. Use the matching test_*.py script to check a part works
+# before changing it here, and keep the test file's pin the same.
+TRIG_PIN = 20             # CHANGE: HC-SR04 TRIG (through level shifter LV1)
+ECHO_PIN = 19             # CHANGE: HC-SR04 ECHO (through level shifter LV2, never direct: it is 5 V)
+I2C_SDA = 4               # CHANGE: OLED SDA. Must be an I2C0 SDA pin (GP0/4/8/12/16/20)
+I2C_SCL = 5               # CHANGE: OLED SCL. Must be the I2C0 SCL pin next to it (GP1/5/9/13/17/21)
+IR_PIN = 15               # CHANGE: IR sensor OUT
+SERVO_PIN = 16            # CHANGE: servo signal (orange wire, through level shifter LV3)
+GREEN_LED_PIN = 28        # CHANGE: green LED (via 220 ohm resistor)
+RED_LED_PIN = 27          # CHANGE: red LED (via 220 ohm resistor)
+
+# ---------------- Gate (ultrasonic + servo) ----------------
+GATE_TRIGGER_CM = 10      # CHANGE: how close (cm) a car must be to the ultrasonic to open the gate.
+                          #   Run test_ultrasonic.py, hold a toy car where it should trigger, use that + 2 cm.
+GATE_OPEN_MS = 3000       # how long (ms) the gate stays open after the car has left the sensor
+REMOTE_OPEN_MS = 15000    # gate opened from the web page stays open at least this long (ms)
+SERVO_CLOSED_DEG = 0      # CHANGE: arm angle when the barrier is down. Adjust if the arm isn't level.
+SERVO_OPEN_DEG = 90       # CHANGE: arm angle when the barrier is up.
+PULSE_MIN_US = 500        # CHANGE: servo pulse for 0 deg. Find yours with test_servo_calibrate.py
+PULSE_MAX_US = 2500       # CHANGE: servo pulse for 180 deg. Same script. Typical: 500-2500 or 1000-2000.
+                          #   Copy the same two numbers into test_servo.py.
+
+# ---------------- Parking spot (IR sensor) ----------------
+IR_ACTIVE_LOW = True      # CHANGE: True if test_ir.py prints raw=0 when a car is there (most modules).
+                          #   Set False if it prints raw=1 when a car is there.
+                          #   Detection distance itself is set with the screw on the IR module.
+IR_SAMPLES = 3            # IR reads in a row (100 ms apart) that must agree before the spot changes state
+BLOCK_WHEN_FULL = True    # True = gate stays shut for new cars while the spot is taken
+
+# ---------------- Other ----------------
+GATE_SAMPLES = 2          # ultrasonic reads in a row that must see a car before the gate opens
+LOOP_MS = 100             # main loop period (ms). Leave at 100 (matches the tracker's debounce rule)
+WEB_ENABLED = True        # CHANGE: False to test the hardware without Wi-Fi / the web page
+                          #   (Wi-Fi name and password go in secrets.py, not here)
 
 # ---------------- Hardware setup ----------------
 sensor = HCSR04(trigger_pin=TRIG_PIN, echo_pin=ECHO_PIN, echo_timeout_us=30000)
@@ -226,6 +246,7 @@ async def main():
             ctl.ip = wifi.connect()
             await WebApp(ctl, ctl.bookings).start()
             print("Booking page: http://%s" % ctl.ip)
+            asyncio.create_task(wifi.retry_station(ctl))   # rejoins the hotspot if it appears later
         except Exception as e:
             print("Web app disabled:", e)
             ctl.ip = None

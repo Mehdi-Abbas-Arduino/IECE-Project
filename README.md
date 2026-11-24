@@ -102,6 +102,7 @@ The gate stays open while a car is still under the barrier, and closes 3 seconds
 | `test_servo.py` | Sweeps the servo, then cycles the gate open and closed |
 | `test_servo_calibrate.py` | Steps through pulse widths to find the servo's real range |
 | `test_oled.py` | Scans the I2C bus and draws a test screen |
+| `test_wifi.py` | Explains why the Pico can't join your Wi-Fi or hotspot |
 | `docs/circuit-design.html` | Schematic, pin map, power budget and bill of materials |
 
 ---
@@ -123,6 +124,18 @@ The gate stays open while a car is still under the barrier, and closes 3 seconds
 |---|---|
 | `secrets.py` present and the network is in range | `http://<IP shown on the OLED>` |
 | No `secrets.py`, or joining fails | Join the Wi-Fi network **SmartParking** (password `parking123`), then open `http://192.168.4.1` |
+
+While it's on its own access point, the Pico keeps retrying the network in `secrets.py` every 60 seconds. If you switch the hotspot on after the Pico has booted, it joins by itself and the OLED shows the new IP address.
+
+### Phone hotspot checklist
+
+The Pico W only works with **2.4 GHz WPA2** networks.
+
+- **iPhone:** Settings → Personal Hotspot → turn on **Maximise Compatibility** (this switches it to 2.4 GHz), and keep that screen open while the Pico connects. Otherwise the hotspot is hidden.
+- **Android:** Hotspot settings → AP band **2.4 GHz**, security **WPA2-Personal**, not WPA3 or WPA2/WPA3.
+- **Name:** iPhone names use a curly apostrophe (`Umar’s iPhone`). `wifi.py` matches a straight `'` too, but a plain name like `ParkingNet` is safest.
+- **Same network:** the phone or laptop that opens the dashboard must be on the same hotspot. The phone that's sharing its own hotspot can open the page too.
+- **Still failing?** Run `test_wifi.py`. It lists every network the Pico sees, shows each status change while joining, and ends with a verdict.
 
 Making a booking: enter your name and number plate, pick a day and arrival time (or tap the timeline), choose how long, and press **Book spot**. Keep the 6-digit code: the page remembers it on that device, and **Already booked?** finds it on any other device.
 
@@ -171,6 +184,7 @@ All settings are constants at the top of `main.py`:
 | Symptom | Likely cause and fix |
 |---|---|
 | `No module named 'machine'` | The file ran on the PC. Use MicroPico's *Run current file on Pico* |
+| Pico never joins Wi-Fi or the hotspot | Run `test_wifi.py` and follow its verdict. See the phone hotspot checklist |
 | Servo slow, weak or jittery | Weak 5 V supply or no common ground. Use a supply of 1 A or more, join the grounds, and add a 470 µF capacitor |
 | Servo doesn't move at all | Check the common ground. Wire SIG straight to GP16, not through the level shifter |
 | Servo moves less than expected | Pulse range doesn't match your servo. Run `test_servo_calibrate.py` |

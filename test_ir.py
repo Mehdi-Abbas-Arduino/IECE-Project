@@ -4,8 +4,9 @@
 from machine import Pin
 import time
 
-IR_PIN = 15
-IR_ACTIVE_LOW = True
+# CHANGE: keep these the same as in main.py
+IR_PIN = 15            # CHANGE: GPIO wired to the IR sensor OUT pin
+IR_ACTIVE_LOW = True   # CHANGE: if 'CAR DETECTED' shows when the spot is EMPTY, set False (and in main.py)
 GREEN_LED_PIN = 28
 RED_LED_PIN = 27
 

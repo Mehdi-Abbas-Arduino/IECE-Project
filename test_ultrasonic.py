@@ -3,9 +3,10 @@
 from hcsr04 import HCSR04
 import time
 
-TRIG_PIN = 20 #LV1
-ECHO_PIN = 19 #LV2
-GATE_TRIGGER_CM = 10
+# CHANGE: keep these the same as in main.py
+TRIG_PIN = 20          # CHANGE: GPIO wired to level shifter LV1 (-> HC-SR04 TRIG)
+ECHO_PIN = 19          # CHANGE: GPIO wired to level shifter LV2 (-> HC-SR04 ECHO)
+GATE_TRIGGER_CM = 10   # CHANGE: distance that counts as 'car at gate'; copy your value to main.py
 
 sensor = HCSR04(trigger_pin=TRIG_PIN, echo_pin=ECHO_PIN, echo_timeout_us=30000)
 

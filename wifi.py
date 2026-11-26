@@ -29,7 +29,9 @@ CONNECT_TIMEOUT_S = 20          # seconds to wait for the hotspot before giving 
 DHCP_EXTRA_S = 20               # extra wait once joined but still waiting for an IP address
 RETRY_EVERY_S = 60              # while on its own network, retry your hotspot this often (seconds)
 
-SECURITY = {0: "open", 1: "WEP", 2: "WPA", 3: "WPA2", 4: "WPA/WPA2", 5: "WPA2", 6: "WPA3", 7: "WPA2/WPA3"}
+# The Pico W scan reports security as bit flags: 1 = encrypted, 2 = WPA, 4 = WPA2.
+# So 5 = WPA2, 7 = WPA/WPA2 mixed. WPA3 is NOT reported separately (it shows as 5).
+SECURITY = {0: "open", 1: "WEP", 3: "WPA", 5: "WPA2", 7: "WPA/WPA2"}
 
 REASONS = {
     getattr(network, "STAT_WRONG_PASSWORD", -3): "wrong password",
@@ -106,8 +108,8 @@ def _report_scan(nets, ssid):
                  "" if exact else " (name differs from secrets.py %r)" % ssid))
         if n[3] < -80:
             print("  Signal is weak, move the Pico closer")
-        if n[4] >= 6:
-            print("  WPA3 may not work, set the hotspot to WPA2")
+        if n[4] in (0, 1):
+            print("  Open/WEP network: make sure the hotspot uses WPA2-Personal")
         return
     print("  %r not visible. It must be 2.4 GHz (iPhone: turn on Maximise Compatibility)" % ssid)
     print("  and, on iPhone, keep the Personal Hotspot screen open. Networks seen:")
@@ -146,8 +148,10 @@ def _prepare_sta(sec):
 
 def resolve_ssid(sta, ssid):
     """Return the exact name to join (from a scan if it matches loosely), and the scan."""
+    print("Wi-Fi: scanning for %r..." % ssid)
     nets = scan(sta)
     n, exact = match(nets, ssid)
+    print("Wi-Fi: %d networks seen, %r %s" % (len(nets), ssid, "found" if n else "NOT visible"))
     if n and not exact:
         print("Using exact network name %r (secrets.py has %r)" % (_ssid(n), ssid))
         return _ssid(n), nets
@@ -197,19 +201,23 @@ def _start_ap():
 
 
 # ---------------- joining ----------------
-def _try_join(sta, ssid, password):
+def _try_join(sta, ssid, password, attempt=1):
     sta.connect(ssid, password)
-    print("Connecting to %r" % ssid, end="")
-    waited, limit = 0, CONNECT_TIMEOUT_S * 2
+    print("Wi-Fi: connecting to %r (attempt %d of 2)" % (ssid, attempt))
+    waited, limit, last = 0, CONNECT_TIMEOUT_S * 2, None
     while waited < limit:
-        if sta.isconnected() or sta.status() < 0:
+        s = sta.status()
+        if s != last:                       # one full line per status change
+            print("  %3d s  %s" % (waited // 2, REASONS.get(s, "status %s" % s)))
+            last = s
+        if sta.isconnected() or s < 0:
             break
-        if sta.status() == 2 and limit == CONNECT_TIMEOUT_S * 2:
+        if s == 2 and limit == CONNECT_TIMEOUT_S * 2:
             limit += DHCP_EXTRA_S * 2      # joined, give the hotspot longer to hand out an IP
-        print(".", end="")
         time.sleep_ms(500)
         waited += 1
-    print()
+        if waited % 10 == 0:
+            print("  %3d s  still waiting..." % (waited // 2))
     return sta.isconnected()
 
 
@@ -238,7 +246,7 @@ def connect():
 
     ok = False
     for attempt in (1, 2):
-        if _try_join(sta, join_ssid, password):
+        if _try_join(sta, join_ssid, password, attempt):
             ok = True
             break
         sta.disconnect()
@@ -259,12 +267,22 @@ def connect():
     return ip
 
 
+def _ap_has_clients():
+    """True if a phone/laptop is joined to the Pico's own network."""
+    try:
+        return len(network.WLAN(network.AP_IF).status("stations")) > 0
+    except Exception:
+        return False
+
+
 async def retry_station(ctl, every_s=RETRY_EVERY_S):
     """While in access-point mode, keep trying the network from secrets.py.
 
-    Waits with asyncio between polls so the parking loop keeps running. The
-    scan itself blocks for about 2 s. On success ctl.ip is updated; the web
-    server listens on every interface, so it is reachable at the new address.
+    The Pico W has one radio. Scanning or joining another network makes it
+    leave the access point's channel, which kicks phones off the Pico's own
+    Wi-Fi (or stops them joining). So this only runs while NOBODY is joined
+    to the access point, does a single quick scan, and switches the station
+    side back off after a failed try.
     """
     global mode
     sec = load_secrets()
@@ -273,10 +291,15 @@ async def retry_station(ctl, every_s=RETRY_EVERY_S):
     ssid, password, secrets = sec
     while mode == "ap":
         await asyncio.sleep(every_s)
+        if _ap_has_clients():
+            continue                      # someone is using the booking page, leave the radio alone
         sta = _prepare_sta(secrets)
-        join_ssid, nets = resolve_ssid(sta, ssid)
-        if match(nets, ssid)[0] is None:
-            continue                      # hotspot still not visible
+        nets = scan(sta, tries=1)
+        n, _ = match(nets, ssid)
+        if n is None or _ap_has_clients():
+            sta.active(False)             # hotspot still not visible
+            continue
+        join_ssid = _ssid(n)
         print("Retrying Wi-Fi %r" % join_ssid)
         sta.connect(join_ssid, password)
         for _ in range((CONNECT_TIMEOUT_S + DHCP_EXTRA_S) * 2):
@@ -291,3 +314,4 @@ async def retry_station(ctl, every_s=RETRY_EVERY_S):
             return
         print("Retry failed: %s" % REASONS.get(sta.status(), "timed out"))
         sta.disconnect()
+        sta.active(False)

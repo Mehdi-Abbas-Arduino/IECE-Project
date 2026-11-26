@@ -55,8 +55,8 @@ for n in sorted(nets, key=lambda n: -n[3]):
     mark = ""
     if n is found:
         mark = "  <== your network" + ("" if exact else " (name differs from secrets.py!)")
-    if n[4] >= 6:
-        mark += "  [WPA3]"
+    if n[4] in (0, 1):
+        mark += "  [open/WEP]"
     print("  %-32s ch %2d  %4d dBm  %-9s%s" % (repr(name) if name else "(hidden)", n[2], n[3],
           wifi.SECURITY.get(n[4], n[4]), mark))
 print("  %d networks seen" % len(nets))
@@ -100,11 +100,10 @@ else:
     elif last == 2:
         verdict = ("Password accepted but no IP address. Turn the hotspot off/on, disconnect other "
                    "devices, or set WIFI_STATIC in secrets.py.")
-    elif found[4] >= 6:
-        verdict = "Hotspot uses WPA3. Change its security to WPA2-Personal."
     else:
-        verdict = ("Join failed (%s). Set the hotspot to WPA2, 2.4 GHz, and move the Pico closer."
-                   % wifi.REASONS.get(last, "timed out"))
+        verdict = ("Join failed (%s). Set the hotspot security to WPA2-Personal (NOT WPA3 or "
+                   "WPA2/WPA3 - the Pico can't tell these apart in a scan), 2.4 GHz, and move "
+                   "the Pico closer." % wifi.REASONS.get(last, "timed out"))
     sta.disconnect()
 
 print("\n=== Verdict ===")

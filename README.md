@@ -2,9 +2,9 @@
 
 An automated single-spot car park built on a **Raspberry Pi Pico W** running **MicroPython**, made for the IECE course project.
 
-When a car comes up to the entrance, an ultrasonic sensor detects it and a servo lifts the barrier. An IR sensor in the parking bay checks whether the spot is taken. Green and red LEDs show the spot status, and an OLED screen shows live information. If the spot is already taken, the barrier stays closed and the screen shows **LOT FULL**.
+When a car comes up to the entrance, an ultrasonic sensor detects it and a servo lifts the barrier. An IR sensor in the parking bay checks whether the spot is taken. Green and red LEDs show whether the spot is free, booked or occupied, and an OLED screen shows live information. If the spot is already taken, the barrier stays closed and the screen shows **LOT FULL**.
 
-Drivers can also **book the spot** from their phone. The Pico W serves a booking web page over Wi-Fi; while a booking is active the gate stays closed for other cars, and the driver who booked opens it with their 6-digit code.
+Drivers can also **book the spot** from their phone. The Pico W serves a booking web page over Wi-Fi; while a booking is active the gate stays closed for other cars, and the driver who booked opens it with their 6-digit code. If the car doesn't turn up within 2 minutes the booking is released, and when the booked time is over the spot turns free and an alert is shown.
 
 ---
 
@@ -13,14 +13,14 @@ Drivers can also **book the spot** from their phone. The Pico W serves a booking
 - **Automatic gate:** the HC-SR04 ultrasonic sensor detects a car within 10 cm of the gate and opens the SG90 servo barrier.
 - **Spot detection:** the IR obstacle sensor checks whether the bay is free or taken. Its readings are debounced, so noise doesn't flip the status.
 - **Full-lot protection:** the gate won't open for a new car while the spot is taken.
-- **Status LEDs:** green means a car is parked, red means the spot is booked, both off means it's free.
+- **Status LEDs:** green = car parked, red = spot booked (car not here yet), both off = spot free.
 - **Live display:** a 128×64 OLED shows the spot status, the gate status and the measured distance.
 - **Non-blocking control loop:** sensors, gate timer and display all update about 10 times a second, with no `sleep` blocking the gate logic.
-- **Booking web app:** pick a day, arrival time and duration (15 min to 4 h, up to 7 days ahead) and get a booking code. Overlapping bookings are refused, bookings survive a reboot, and no-shows are released after 15 minutes.
+- **Booking web app:** pick a day, arrival time and duration (15 min to 4 h, up to 7 days ahead) and get a booking code. Overlapping bookings are refused and bookings survive a reboot.
 - **Open the gate from your phone:** the booking code opens the gate from 10 minutes before the booking starts until it ends, both for arriving and for leaving.
-- **Reserved status:** the red LED lights and the OLED shows *RESERVED* while a booking is active.
-- **No-show release:** if no car arrives within 2 minutes of the booking start, the booking is cancelled and the spot is free again.
-- **Alerts:** when a booking's time is complete (or it is released as a no-show) the spot turns free, an alert appears on the web page and the OLED shows *TIME UP* / *NO SHOW*.
+- **Reserved status:** the red LED lights while a booking is active, and the OLED shows *RESERVED* if a car without the code comes to the gate.
+- **No-show release:** if no car arrives within 2 minutes of the booking start, the booking is cancelled and the spot is free again. A car counts as arrived when its code opens the gate or the IR sensor sees a car in the spot.
+- **Alerts:** when a booking's time is complete, or it is released as a no-show, the spot turns free and an alert is sent: a banner on the web page (the driver's own phone also vibrates), *TIME UP* / *NO SHOW* on the OLED for 10 s, and an `ALERT:` line in the serial log.
 - **Spots dashboard:** the web page lists every spot as Free, Booked or Occupied, and shows *Sorry No spots left* when none are free.
 - **Separate test scripts** for every component, plus a tool to calibrate the servo.
 
@@ -38,7 +38,7 @@ Drivers can also **book the spot** from their phone. The Pico W serves a booking
 | 1 | 4-channel logic level converter (BSS138) | 5 V ↔ 3.3 V for the HC-SR04 |
 | 1 + 1 | 5 mm LEDs, green and red | Spot status |
 | 2 | 220 Ω resistors | LED current limit, about 6 mA each |
-| 1 | 5 V supply, ≥ 1 A | Powers the servo and the HC-SR04 |
+| 1 | 5 V supply, ≥ 1 A | Powers the servo and the HC-SR04. On a bench supply, set the **current limit to at least 1 A** |
 | 1 | 470 µF capacitor (optional) | Smooths the servo's supply |
 
 ---
@@ -74,9 +74,15 @@ IR sensor ──►│ debounce (3 equal reads) ──► spot FREE/TAKEN │─
              │                                              │
 HC-SR04 ────►│ distance < 10 cm on 2 reads ──► car at gate  │
              │                                              │
+Bookings ───►│ booking active ──► RESERVED (red LED)        │
+             │ no car 2 min after start ──► free + alert    │
+             │ end time reached ──► free + alert            │
+             │                                              │
              │ Gate state machine                           │──► Servo
              │   CLOSED ─ car at gate & spot free ─► OPEN   │
              │   CLOSED ─ car at gate & spot taken ─► FULL  │
+             │   CLOSED ─ car at gate & booked ─► RESERVED  │
+             │   CLOSED ─ code entered on web page ─► OPEN  │
              │   OPEN ── no car for 3 s ──────────► CLOSED  │
              └──────────────────────────────────────────────┘──► OLED + serial log
 ```
@@ -102,7 +108,7 @@ The gate stays open while a car is still under the barrier, and closes 3 seconds
 | `test_leds.py` | Blinks the green and red LEDs |
 | `test_ir.py` | Prints IR detections and lights the matching LED |
 | `test_ultrasonic.py` | Prints the measured distance and flags "CAR AT GATE" |
-| `test_servo.py` | Sweeps the servo, then cycles the gate open and closed |
+| `test_servo.py` | Cycles the gate open (11.5 % duty) and closed (6.5 % duty) |
 | `test_servo_calibrate.py` | Steps through pulse widths to find the servo's real range |
 | `test_oled.py` | Scans the I2C bus and draws a test screen |
 | `test_wifi.py` | Explains why the Pico can't join your Wi-Fi or hotspot |
@@ -128,7 +134,11 @@ The gate stays open while a car is still under the barrier, and closes 3 seconds
 | `secrets.py` present and the network is in range | `http://<IP shown on the OLED>` |
 | No `secrets.py`, or joining fails | Join the Wi-Fi network **SmartParking** (password `parking123`), then open `http://192.168.4.1` |
 
-While it's on its own access point, the Pico keeps retrying the network in `secrets.py` every 60 seconds. If you switch the hotspot on after the Pico has booted, it joins by itself and the OLED shows the new IP address.
+While it's on its own access point, the Pico keeps retrying the network in `secrets.py` every 60 seconds, but **only while no phone is joined to SmartParking**. The Pico W has one radio, and scanning for another network would kick phones off. If you switch the hotspot on after the Pico has booted, it joins by itself and the OLED shows the new IP address.
+
+When you join **SmartParking**, your phone will warn that there's no internet. Choose **Stay connected** and turn off mobile data, or the phone may leave the network or send the page request over mobile data.
+
+Joining can take up to about 2 minutes before the Pico gives up and starts SmartParking. The serial log prints every step (`Wi-Fi: scanning...`, `Wi-Fi: connecting ... (attempt 1 of 2)`, each status change), so you can see it's still working.
 
 ### Phone hotspot checklist
 
@@ -139,6 +149,15 @@ The Pico W only works with **2.4 GHz WPA2** networks.
 - **Name:** iPhone names use a curly apostrophe (`Umar’s iPhone`). `wifi.py` matches a straight `'` too, but a plain name like `ParkingNet` is safest.
 - **Same network:** the phone or laptop that opens the dashboard must be on the same hotspot. The phone that's sharing its own hotspot can open the page too.
 - **Still failing?** Run `test_wifi.py`. It lists every network the Pico sees, shows each status change while joining, and ends with a verdict.
+
+### Dashboard
+
+- **Spots:** every spot is listed as *Free*, *Booked* or *Occupied*, with a count such as "1 of 1 spot free". When none are free the page shows **Sorry No spots left**.
+- **Status card:** the spot state, when the current booking ends, and whether the gate is open.
+- **Alerts:** banners at the top when a booking ends or is released. The driver who made the booking sees "Your booking time is complete. The spot is now free." Alerts stay for 10 minutes or until dismissed with ×.
+- The page refreshes itself every 3 seconds.
+
+### Making and using a booking
 
 Making a booking: enter your name and number plate, pick a day and arrival time (or tap the timeline), choose how long, and press **Book spot**. Keep the 6-digit code: the page remembers it on that device, and **Already booked?** finds it on any other device.
 
@@ -156,7 +175,7 @@ Rules, set at the top of `booking.py`:
 
 **The clock:** on Wi-Fi the Pico sets its clock from the internet (NTP). In access-point mode it has no internet, so the first browser that opens the page sets the clock. Bookings can't be made until the clock is set.
 
-**API** (JSON): `GET /api/status`, `POST /api/book {name, plate, start, end}`, `POST /api/lookup {code}`, `POST /api/cancel {code}`, `POST /api/open {code}`. Times are Unix seconds.
+**API** (JSON): `GET /api/status`, `POST /api/book {name, plate, start, end}`, `POST /api/lookup {code}`, `POST /api/cancel {code}`, `POST /api/open {code}`. Times are Unix seconds. `/api/status` also returns `spots` (each with `state` *free*, *booked* or *occupied*), `free_spots`, and `alerts` from the last 10 minutes.
 
 **Try it on your PC:** `python tools/preview_server.py`, then open http://localhost:8080. It runs the real `web.py` and `booking.py` with a pretend controller.
 
@@ -172,13 +191,22 @@ All settings are constants at the top of `main.py`:
 |---|---|---|
 | `GATE_TRIGGER_CM` | `10` | Distance that counts as a car at the gate |
 | `GATE_OPEN_MS` | `3000` | How long the gate stays open after the car has passed |
-| `SERVO_CLOSED_DEG` / `SERVO_OPEN_DEG` | `0` / `90` | Barrier angles |
-| `PULSE_MIN_US` / `PULSE_MAX_US` | `500` / `2500` | Servo pulse range. Set these from `test_servo_calibrate.py` |
+| `SERVO_CLOSED_DEG` / `SERVO_OPEN_DEG` | `0` / `180` | Barrier angles. 0 = `PULSE_MIN_US`, 180 = `PULSE_MAX_US` |
+| `PULSE_MIN_US` / `PULSE_MAX_US` | `1300` / `2300` | Gate closed / open pulse, measured on our servo (6.5 % / 11.5 % duty at 50 Hz) |
 | `IR_ACTIVE_LOW` | `True` | Set to `False` if your IR module outputs HIGH when it detects something |
 | `BLOCK_WHEN_FULL` | `True` | Keep the gate closed when the spot is taken |
 | `IR_SAMPLES` / `GATE_SAMPLES` | `3` / `2` | Debounce counts |
 | `REMOTE_OPEN_MS` | `15000` | How long the gate stays open after **Open gate** on the web page |
+| `ALERT_SHOW_MS` | `10000` | How long *TIME UP* / *NO SHOW* stays on the OLED |
 | `WEB_ENABLED` | `True` | Set to `False` to run without Wi-Fi and booking |
+
+### Servo calibration
+
+Every SG90 is slightly different, and many can't turn a full 180°. Pushing one past its end stop makes it buzz and stick. To find your servo's positions:
+
+1. **Check the signal** with an oscilloscope on GP16 (probe ground on GND). You should see 50 Hz (20 ms period), 3.3 V high, and a pulse between 0.5 and 2.5 ms. Use **Measure → +Width** to read the pulse exactly.
+2. **Find the positions** by driving the servo from a function generator: square wave, 50 Hz, 5 Vpp, **offset +2.5 V** so it swings 0–5 V. Change DUTY until the arm sits where the gate should be closed, then open. At 50 Hz, duty % × 200 = pulse in µs, so 6.5 % = 1300 µs. Or run `test_servo_calibrate.py` and note the pulse values it prints.
+3. **Set the values:** `PULSE_MIN_US` (closed) and `PULSE_MAX_US` (open) in `main.py`, and `CLOSED_DUTY` / `OPEN_DUTY` in `test_servo.py`.
 
 ---
 
@@ -188,14 +216,18 @@ All settings are constants at the top of `main.py`:
 |---|---|
 | `No module named 'machine'` | The file ran on the PC. Use MicroPico's *Run current file on Pico* |
 | Pico never joins Wi-Fi or the hotspot | Run `test_wifi.py` and follow its verdict. See the phone hotspot checklist |
-| Servo slow, weak or jittery | Weak 5 V supply or no common ground. Use a supply of 1 A or more, join the grounds, and add a 470 µF capacitor |
-| Servo doesn't move at all | Check the common ground. Wire SIG straight to GP16, not through the level shifter |
-| Servo moves less than expected | Pulse range doesn't match your servo. Run `test_servo_calibrate.py` |
+| Nothing printed after `Smart Parking started.` | Wi-Fi is still trying, so wait up to 2 minutes. If no `Wi-Fi:` lines appear at all, unplug the Pico for 10 s and run `test_wifi.py` |
+| Phone won't stay on *SmartParking* | Choose *Stay connected* when the phone says there's no internet, and turn off mobile data |
+| Servo only vibrates, or is slow or jittery | Supply current limit too low: the SG90 draws up to about 0.7 A when it starts to move. Set the bench supply's limit to 1 A (watch for the CC light), join the grounds, and add a 470 µF capacitor |
+| Servo doesn't move at all | Check the common ground and that the servo has 5 V on its red wire. Wire SIG straight to GP16, not through the level shifter. Check the signal on the orange wire with an oscilloscope |
+| Servo moves once, then sticks at one end | The pulse is past the servo's end stop. See *Servo calibration* |
+| Servo moves less than expected | Pulse range doesn't match your servo. See *Servo calibration* |
 | Ultrasonic works in the test but not in `main.py` | The servo is pulling down the shared 5 V rail. Fix the servo power as above |
 | OLED blank | Check SDA/SCL. `test_oled.py` prints the I2C address it finds (0x3C or 0x3D) |
 | Spot status inverted | Change `IR_ACTIVE_LOW` |
 | Booking page doesn't load | Check the phone is on the same network as the Pico (or on *SmartParking*), and that `www/index.html` was uploaded. The serial log prints the address |
 | "The parking clock is not set yet" | Reload the page. In access-point mode the page sets the clock when it loads |
+| Booking released straight away | No car arrived within 2 minutes of the start. Open the gate with the code or park in the spot in time, or raise `NO_SHOW` in `booking.py` |
 | IR always or never detects | Turn the sensor's potentiometer to adjust its range |
 
 ---

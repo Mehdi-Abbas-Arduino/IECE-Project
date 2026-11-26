@@ -6,7 +6,7 @@ from machine import Pin, PWM
 import time
 
 SERVO_PIN = 16        # CHANGE: same GPIO as SERVO_PIN in main.py
-FREQ_HZ = 70          # CHANGE: SG90 standard is 50 Hz (main.py uses 50); stay within 50-60
+FREQ_HZ = 50          # CHANGE: SG90 standard is 50 Hz (main.py uses 50); stay within 50-60
 STEP_US = 100
 HOLD_MS = 800
 

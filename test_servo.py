@@ -1,41 +1,36 @@
-# SG90 servo test - sweeps 0 -> 90 -> 180 -> 90 -> 0, then cycles gate closed/open.
-# Servo must be powered from the external 5 V supply with GND shared with the Pico.
+# SG90 servo test - cycles the gate CLOSED / OPEN using duty-cycle values
+# measured on this servo (with the function generator at 50 Hz).
+# Servo must be powered from the external 5 V supply (current limit >= 1 A)
+# with GND shared with the Pico.
 from machine import Pin, PWM
 import time
 
-# CHANGE: keep all of these the same as in main.py.
 SERVO_PIN = 16            # CHANGE: GPIO of the servo signal wire
-SERVO_CLOSED_DEG = 0      # CHANGE: barrier-down angle
-SERVO_OPEN_DEG = 90       # CHANGE: barrier-up angle
-PULSE_MIN_US = 500        # CHANGE: pulse for 0 deg   (find yours with test_servo_calibrate.py)
-PULSE_MAX_US = 2500       # CHANGE: pulse for 180 deg
-FREQ_HZ =       50        # leave at 50 Hz: SG90 servos expect a 20 ms period
+FREQ_HZ = 50              # leave at 50 Hz: SG90 servos expect a 20 ms period
+CLOSED_DUTY = 6.5         # CHANGE: % duty for gate closed (6.5 % of 20 ms = 1300 us)
+OPEN_DUTY = 11.5          # CHANGE: % duty for gate open   (11.5 % of 20 ms = 2300 us)
+HOLD_S = 2                # seconds to stay in each position
 
 servo = PWM(Pin(SERVO_PIN))
 servo.freq(FREQ_HZ)
 PERIOD_US = 1_000_000 // FREQ_HZ
 
 
-def set_angle(deg):
-    deg = max(0, min(180, deg))
-    pulse_us = PULSE_MIN_US + (deg / 180) * (PULSE_MAX_US - PULSE_MIN_US)
-    servo.duty_u16(70)
-    return pulse_us
+def set_duty(percent):
+    servo.duty_u16(int(percent / 100 * 65535))
+    return percent / 100 * PERIOD_US      # pulse width in us, for the printout
 
 
-print("Servo test on GP%d at %d Hz, pulse %d-%d us. Ctrl+C to stop." %
-      (SERVO_PIN, FREQ_HZ, PULSE_MIN_US, PULSE_MAX_US))
+print("Servo test on GP%d at %d Hz: closed %.1f %%, open %.1f %%. Ctrl+C to stop." %
+      (SERVO_PIN, FREQ_HZ, CLOSED_DUTY, OPEN_DUTY))
 try:
-    for a in (0, 90, 180, 90, 0):
-        print("Angle %3d -> pulse %d us" % (a, set_angle(a)))
-        time.sleep(1)
     while True:
-        print("Gate OPEN   (%d deg, %d us)" % (SERVO_OPEN_DEG, set_angle(SERVO_OPEN_DEG)))
-        time.sleep(2)
-        print("Gate CLOSED (%d deg, %d us)" % (SERVO_CLOSED_DEG, set_angle(SERVO_CLOSED_DEG)))
-        time.sleep(2)
+        print("Gate OPEN   (%.1f %%, %d us)" % (OPEN_DUTY, set_duty(OPEN_DUTY)))
+        time.sleep(HOLD_S)
+        print("Gate CLOSED (%.1f %%, %d us)" % (CLOSED_DUTY, set_duty(CLOSED_DUTY)))
+        time.sleep(HOLD_S)
 except KeyboardInterrupt:
-    set_angle(SERVO_CLOSED_DEG)
+    set_duty(CLOSED_DUTY)
     time.sleep_ms(500)
     servo.deinit()
     print("Stopped.")

@@ -25,9 +25,9 @@ RED_LED_PIN = 27
 GATE_TRIGGER_CM = 10      # car closer than this to the ultrasonic = car at gate
 GATE_OPEN_MS = 3000       # keep gate open this long after the car leaves the sensor
 SERVO_CLOSED_DEG = 0
-SERVO_OPEN_DEG = 90
-PULSE_MIN_US = 500        # pulse for 0 deg   (find yours with test_servo_calibrate.py)
-PULSE_MAX_US = 2500       # pulse for 180 deg
+SERVO_OPEN_DEG = 180
+PULSE_MIN_US = 1300       # CHANGE: pulse (us) for 0 deg = gate CLOSED (6.5 % duty at 50 Hz, measured)
+PULSE_MAX_US = 2300       # CHANGE: pulse (us) for 180 deg = gate OPEN (11.5 % duty at 50 Hz, measured)
 IR_ACTIVE_LOW = True      # most IR modules output 0 when something is detected
 BLOCK_WHEN_FULL = True    # don't open the gate if the spot is already taken
 IR_SAMPLES = 3            # consecutive equal IR reads needed to change state

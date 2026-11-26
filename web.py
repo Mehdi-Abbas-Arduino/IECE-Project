@@ -188,12 +188,19 @@ class WebApp:
                 pass
         now = clock.now()
         active = self.bookings.active(now) if clock.synced else None
+        occupied = self.ctl.spot_occupied
+        # One IR sensor = one spot. Add more entries here if more sensors are fitted.
+        spots = [{"id": 1, "name": "Spot 1",
+                  "state": "occupied" if occupied else ("booked" if active else "free")}]
         return {
             "ok": True,
             "now": now,
             "clock_synced": clock.synced,
-            "spot": {"occupied": self.ctl.spot_occupied,
+            "spot": {"occupied": occupied,
                      "reserved": active is not None},
+            "spots": spots,
+            "free_spots": sum(1 for sp in spots if sp["state"] == "free"),
+            "alerts": self.bookings.recent_alerts(now),
             "gate": {"open": self.ctl.gate_open},
             "bookings": self.bookings.public(now),
             "rules": {"min_minutes": MIN_DURATION // 60, "max_minutes": MAX_DURATION // 60,

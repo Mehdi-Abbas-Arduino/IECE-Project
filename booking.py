@@ -17,9 +17,11 @@ MIN_DURATION = 15 * 60          # CHANGE: shortest booking (15 min)
 MAX_DURATION = 4 * 60 * 60      # CHANGE: longest booking (4 h)
 MAX_AHEAD = 7 * 24 * 60 * 60    # how far ahead a booking can start (7 days)
 EARLY_ACCESS = 10 * 60          # CHANGE: the code opens the gate this long before the start (10 min)
-NO_SHOW = 15 * 60               # CHANGE: release a RESERVED spot back to FREE if nobody arrives
-                                #   by start + this. Tracker task 2.4 / test R2 asks for 60 s:
-                                #   set NO_SHOW = 60 for that test (and make a booking that starts now).
+NO_SHOW = 2 * 60                # CHANGE: release a RESERVED spot back to FREE if no car arrives
+                                #   by start + this (2 min). A car counts as arrived when the booking
+                                #   code opens the gate or the IR sensor sees a car in the spot.
+ALERT_KEEP = 10 * 60            # alerts stay on the web page for this long (10 min)
+MAX_ALERTS = 10                 # most alerts kept in memory
 MAX_BOOKINGS = 30               # most bookings stored at once (limited by the Pico's memory)
 NAME_MAX = 24
 PLATE_MAX = 10
@@ -60,6 +62,8 @@ class Bookings:
         self.path = path
         self.items = []
         self.next_id = 1
+        self.alerts = []          # recent alerts for the web page, newest last (not saved)
+        self._alert_id = 0
         self._load()
 
     # ---------- persistence ----------
@@ -158,13 +162,43 @@ class Bookings:
             b["arrived"] = True
             self._save()
 
+    def car_in_spot(self, now):
+        """Call while the IR sensor sees a car: the active booking counts as arrived."""
+        b = self.active(now)
+        if b and not b["arrived"]:
+            self.mark_arrived(b)
+            return b
+        return None
+
+    # ---------- alerts ----------
+    def alert(self, now, kind, text, booking=None):
+        """Store an alert for the web page. kind: "ended" or "no_show"."""
+        self._alert_id += 1
+        self.alerts.append({"id": self._alert_id, "time": now, "kind": kind, "text": text,
+                            "booking_id": booking["id"] if booking else None})
+        del self.alerts[:-MAX_ALERTS]
+        print("ALERT:", text)
+
+    def recent_alerts(self, now):
+        return [a for a in self.alerts if now - a["time"] < ALERT_KEEP]
+
     def tick(self, now):
-        """Drop finished bookings and no-shows. Returns the removed bookings."""
-        removed = [b for b in self.items
-                   if b["end"] <= now
-                   or (not b["arrived"] and now >= b["start"] + NO_SHOW)]
+        """Drop finished bookings and no-shows, raising an alert for each.
+        Returns a list of (booking, reason) with reason "ended" or "no_show"."""
+        removed = []
+        for b in self.items:
+            if b["end"] <= now:
+                removed.append((b, "ended"))
+            elif not b["arrived"] and now >= b["start"] + NO_SHOW:
+                removed.append((b, "no_show"))
         if removed:
-            for b in removed:
+            for b, reason in removed:
                 self.items.remove(b)
+                if reason == "ended":
+                    self.alert(now, "ended", "Booking #%d (%s) time is complete. The spot is now free."
+                               % (b["id"], b["plate"]), b)
+                else:
+                    self.alert(now, "no_show", "Booking #%d (%s) cancelled: no car arrived within %d min. "
+                               "The spot is now free." % (b["id"], b["plate"], NO_SHOW // 60), b)
             self._save()
         return removed

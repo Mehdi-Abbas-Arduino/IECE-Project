@@ -13,12 +13,15 @@ Drivers can also **book the spot** from their phone. The Pico W serves a booking
 - **Automatic gate:** the HC-SR04 ultrasonic sensor detects a car within 10 cm of the gate and opens the SG90 servo barrier.
 - **Spot detection:** the IR obstacle sensor checks whether the bay is free or taken. Its readings are debounced, so noise doesn't flip the status.
 - **Full-lot protection:** the gate won't open for a new car while the spot is taken.
-- **Status LEDs:** green means the spot is free, red means it's taken.
+- **Status LEDs:** green means a car is parked, red means the spot is booked, both off means it's free.
 - **Live display:** a 128×64 OLED shows the spot status, the gate status and the measured distance.
 - **Non-blocking control loop:** sensors, gate timer and display all update about 10 times a second, with no `sleep` blocking the gate logic.
 - **Booking web app:** pick a day, arrival time and duration (15 min to 4 h, up to 7 days ahead) and get a booking code. Overlapping bookings are refused, bookings survive a reboot, and no-shows are released after 15 minutes.
 - **Open the gate from your phone:** the booking code opens the gate from 10 minutes before the booking starts until it ends, both for arriving and for leaving.
-- **Reserved status:** the red LED blinks and the OLED shows *RESERVED* while a booking is active.
+- **Reserved status:** the red LED lights and the OLED shows *RESERVED* while a booking is active.
+- **No-show release:** if no car arrives within 2 minutes of the booking start, the booking is cancelled and the spot is free again.
+- **Alerts:** when a booking's time is complete (or it is released as a no-show) the spot turns free, an alert appears on the web page and the OLED shows *TIME UP* / *NO SHOW*.
+- **Spots dashboard:** the web page lists every spot as Free, Booked or Occupied, and shows *Sorry No spots left* when none are free.
 - **Separate test scripts** for every component, plus a tool to calibrate the servo.
 
 ---
@@ -148,7 +151,7 @@ Rules, set at the top of `booking.py`:
 | `MIN_DURATION` / `MAX_DURATION` | 15 min / 4 h | Allowed booking length |
 | `MAX_AHEAD` | 7 days | How far ahead you can book |
 | `EARLY_ACCESS` | 10 min | The code opens the gate this long before the start |
-| `NO_SHOW` | 15 min | A booking whose gate was never opened is released after this |
+| `NO_SHOW` | 2 min | A booking is released if no car arrives (gate opened with the code, or a car seen by the IR sensor) within this time of its start |
 | `MAX_BOOKINGS` | 30 | Bookings stored at once |
 
 **The clock:** on Wi-Fi the Pico sets its clock from the internet (NTP). In access-point mode it has no internet, so the first browser that opens the page sets the clock. Bookings can't be made until the clock is set.

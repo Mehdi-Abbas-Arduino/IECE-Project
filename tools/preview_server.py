@@ -47,10 +47,13 @@ async def main():
     clock.mark_synced()   # the PC clock is already correct
     store = os.path.join(tempfile.gettempdir(), "smart_parking_preview.json")
     bookings = Bookings(store)
-    server = await WebApp(FakeController(), bookings, port=PORT).start()
+    ctl = FakeController()
+    server = await WebApp(ctl, bookings, port=PORT).start()
     print("Booking page preview: http://localhost:%d  (Ctrl+C to stop)" % PORT)
     print("Bookings stored in", store)
     while True:
+        if ctl.spot_occupied:
+            bookings.car_in_spot(clock.now())
         bookings.tick(clock.now())
         await asyncio.sleep(1)
 

@@ -101,6 +101,24 @@ ul.list li { display: flex; justify-content: space-between; padding: 7px 0; bord
 ul.list li:first-child { border-top: 0; }
 .muted { color: var(--muted); }
 footer { text-align: center; font-size: 12px; color: var(--muted); }
+
+/* spots */
+.spots { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.spot { border: 2px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; }
+.spot b { display: block; font-size: 14px; }
+.spot span { font-size: 13px; font-weight: 600; }
+.spot.free { border-color: var(--free); } .spot.free span { color: var(--free); }
+.spot.booked { border-color: var(--held); } .spot.booked span { color: var(--held); }
+.spot.occupied { border-color: var(--busy); } .spot.occupied span { color: var(--busy); }
+.spots-count { font-size: 14px; color: var(--muted); margin: 0 0 12px; }
+.nospots { margin: 12px 0 0; padding: 12px; border-radius: 10px; background: var(--busy); color: #fff; font-weight: 700; text-align: center; }
+
+/* alerts */
+.alert { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--held); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; font-size: 14px; }
+.alert.mine { border-left-color: var(--accent); }
+.alert p { margin: 0; flex: 1; min-width: 0; }
+.alert small { display: block; color: var(--muted); margin-top: 2px; }
+.alert button { font: inherit; font-size: 18px; line-height: 1; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 2px; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -110,6 +128,15 @@ footer { text-align: center; font-size: 12px; color: var(--muted); }
     <h1>Smart Parking</h1>
     <div class="live"><span class="dot" id="dot"></span><span id="live">Connecting…</span></div>
   </header>
+
+  <div id="alerts" role="status" aria-live="assertive"></div>
+
+  <section class="card">
+    <h2>Spots</h2>
+    <p class="spots-count" id="spotsCount">Checking…</p>
+    <div class="spots" id="spots"></div>
+    <p class="nospots" id="noSpots" hidden>Sorry No spots left</p>
+  </section>
 
   <section class="card" aria-live="polite">
     <div class="status">
@@ -205,6 +232,8 @@ footer { text-align: center; font-size: 12px; color: var(--muted); }
   };
 
   var status = null, skew = 0, mine = null, selDay = 0, selMin = 60, okPolls = 0;
+  var ALERTS_STORE = "parking.alerts.dismissed", dismissed = [], lastMineId = null, shownAlerts = {};
+  var SPOT_TEXT = { free: "Free", booked: "Booked", occupied: "Occupied" };
 
   // ---------- helpers ----------
   function nowS() { return Math.floor(Date.now() / 1000) + skew; }
@@ -337,6 +366,51 @@ footer { text-align: center; font-size: 12px; color: var(--muted); }
     }).join("") : '<li class="muted">The spot is free for the next ' + (status ? status.rules.max_days_ahead : 7) + " days.</li>";
   }
 
+  function renderSpots() {
+    if (!status || !status.spots) return;
+    $("spots").innerHTML = status.spots.map(function (sp) {
+      return '<div class="spot ' + sp.state + '"><b>' + sp.name + "</b><span>" + (SPOT_TEXT[sp.state] || sp.state) + "</span></div>";
+    }).join("");
+    var free = status.free_spots, total = status.spots.length;
+    $("spotsCount").textContent = free + " of " + total + " spot" + (total === 1 ? "" : "s") + " free";
+    $("noSpots").hidden = free > 0;
+  }
+
+  function alertKey(a) { return a.id + ":" + a.time; }
+  function loadDismissed() { try { dismissed = JSON.parse(localStorage.getItem(ALERTS_STORE)) || []; } catch (e) { dismissed = []; } }
+  function dismiss(key) {
+    dismissed.push(key); dismissed = dismissed.slice(-30);
+    try { localStorage.setItem(ALERTS_STORE, JSON.stringify(dismissed)); } catch (e) {}
+    renderAlerts();
+  }
+  function renderAlerts() {
+    var list = (status && status.alerts) || [], box = $("alerts");
+    box.innerHTML = "";
+    list.slice().reverse().forEach(function (a) {
+      var key = alertKey(a);
+      if (dismissed.indexOf(key) >= 0) return;
+      var isMine = a.booking_id != null && (a.booking_id === lastMineId || (mine && a.booking_id === mine.id));
+      var el = document.createElement("div");
+      el.className = "alert" + (isMine ? " mine" : "");
+      var p = document.createElement("p");
+      p.textContent = isMine
+        ? (a.kind === "ended" ? "Your booking time is complete. The spot is now free."
+                              : "Your booking was cancelled because no car arrived in time. The spot is now free.")
+        : a.text;
+      var t = document.createElement("small");
+      t.textContent = hm(a.time);
+      p.appendChild(t);
+      var x = document.createElement("button");
+      x.type = "button"; x.setAttribute("aria-label", "Dismiss"); x.textContent = "×";
+      x.addEventListener("click", function () { dismiss(key); });
+      el.appendChild(p); el.appendChild(x); box.appendChild(el);
+      if (!shownAlerts[key]) {
+        shownAlerts[key] = true;
+        if (isMine && navigator.vibrate) { try { navigator.vibrate([200, 100, 200]); } catch (e) {} }
+      }
+    });
+  }
+
   function renderRules() {
     if (!status) return;
     var r = status.rules;
@@ -346,7 +420,7 @@ footer { text-align: center; font-size: 12px; color: var(--muted); }
   }
 
   function render() {
-    renderDays(); renderDurations(); renderTimeline(); renderSummary(); renderStatus(); renderTicket(); renderUpcoming(); renderRules();
+    renderDays(); renderDurations(); renderTimeline(); renderSummary(); renderStatus(); renderTicket(); renderUpcoming(); renderRules(); renderSpots(); renderAlerts();
   }
 
   // ---------- data ----------
@@ -355,6 +429,7 @@ footer { text-align: center; font-size: 12px; color: var(--muted); }
       status = s;
       skew = s.now - Math.floor(Date.now() / 1000);
       if (mine && !s.bookings.some(function (b) { return b.id === mine.id; })) {
+        lastMineId = mine.id;
         saveMine(null);
         msg($("formMsg"), "Your previous booking has ended or was released.", "");
       }
@@ -429,6 +504,8 @@ footer { text-align: center; font-size: 12px; color: var(--muted); }
   });
 
   loadMine();
+  loadDismissed();
+  if (mine) lastMineId = mine.id;
   render();
   poll();
   setInterval(poll, 3000);

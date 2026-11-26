@@ -2,7 +2,7 @@
 #
 #   HC-SR04 ultrasonic  -> detects a car at the GATE, opens the servo barrier
 #   IR obstacle sensor  -> detects a car in the PARKING SPOT
-#   Green LED = spot free, Red LED = spot occupied, blinking red = reserved
+#   LEDs: green = car parked, red = spot booked, both off = spot free
 #   SSD1306 OLED (128x64, I2C) shows the live status
 #   Wi-Fi web app       -> book the spot, open the gate with a booking code
 #
@@ -48,10 +48,10 @@ GATE_TRIGGER_CM = 10      # CHANGE: how close (cm) a car must be to the ultrason
 GATE_OPEN_MS = 3000       # how long (ms) the gate stays open after the car has left the sensor
 REMOTE_OPEN_MS = 15000    # gate opened from the web page stays open at least this long (ms)
 SERVO_CLOSED_DEG = 0      # CHANGE: arm angle when the barrier is down. Adjust if the arm isn't level.
-SERVO_OPEN_DEG = 90       # CHANGE: arm angle when the barrier is up.
-PULSE_MIN_US = 500        # CHANGE: servo pulse for 0 deg. Find yours with test_servo_calibrate.py
-PULSE_MAX_US = 2500       # CHANGE: servo pulse for 180 deg. Same script. Typical: 500-2500 or 1000-2000.
-                          #   Copy the same two numbers into test_servo.py.
+SERVO_OPEN_DEG = 180      # CHANGE: arm angle when the barrier is up (180 = PULSE_MAX_US).
+PULSE_MIN_US = 1300       # CHANGE: pulse (us) for 0 deg = gate CLOSED (6.5 % duty at 50 Hz, measured)
+PULSE_MAX_US = 2300       # CHANGE: pulse (us) for 180 deg = gate OPEN (11.5 % duty at 50 Hz, measured)
+                          #   test_servo.py uses the same positions as duty % (CLOSED_DUTY / OPEN_DUTY).
 
 # ---------------- Parking spot (IR sensor) ----------------
 IR_ACTIVE_LOW = True      # CHANGE: True if test_ir.py prints raw=0 when a car is there (most modules).
@@ -61,6 +61,7 @@ IR_SAMPLES = 3            # IR reads in a row (100 ms apart) that must agree bef
 BLOCK_WHEN_FULL = True    # True = gate stays shut for new cars while the spot is taken
 
 # ---------------- Other ----------------
+ALERT_SHOW_MS = 10000     # how long (ms) a "TIME UP" / "NO SHOW" alert stays on the OLED
 GATE_SAMPLES = 2          # ultrasonic reads in a row that must see a car before the gate opens
 LOOP_MS = 100             # main loop period (ms). Leave at 100 (matches the tracker's debounce rule)
 WEB_ENABLED = True        # CHANGE: False to test the hardware without Wi-Fi / the web page
@@ -125,6 +126,8 @@ class Controller:
         self._ir_count = 0
         self._near_count = 0
         self._last_status = None
+        self._alert_banner = None
+        self._alert_until = 0
 
     # Called from the web app
     def open_gate(self):
@@ -139,14 +142,14 @@ class Controller:
             self.gate_hold_until = until
 
     def _update_leds(self):
-        if self.spot_occupied:
+        if self.spot_occupied:        # car parked -> green
+            green.value(1)
+            red.value(0)
+        elif self.reserved:           # booked, car not here yet -> red
             green.value(0)
             red.value(1)
-        elif self.reserved:
+        else:                         # free -> both off
             green.value(0)
-            red.value((time.ticks_ms() // 500) % 2)   # 1 Hz blink
-        else:
-            green.value(1)
             red.value(0)
 
     def _show(self, dist, banner):
@@ -175,8 +178,13 @@ class Controller:
         # --- Bookings: is the spot reserved right now? ---
         if clock.synced:
             t = clock.now()
-            for b in self.bookings.tick(t):
-                print("Booking #%d ended" % b["id"])
+            if self.spot_occupied:
+                b = self.bookings.car_in_spot(t)
+                if b:
+                    print("Booking #%d: car arrived" % b["id"])
+            for b, reason in self.bookings.tick(t):
+                self._alert_banner = "TIME UP" if reason == "ended" else "NO SHOW"
+                self._alert_until = time.ticks_add(now, ALERT_SHOW_MS)
             self.reserved = self.bookings.active(t) is not None
         else:
             self.reserved = False
@@ -215,6 +223,11 @@ class Controller:
         elif self.gate_open and time.ticks_diff(now, self.gate_hold_until) > 0:
             self.gate_open = False
             set_angle(SERVO_CLOSED_DEG)
+        if banner is None and self._alert_banner:
+            if time.ticks_diff(self._alert_until, now) > 0:
+                banner = self._alert_banner        # booking ended / released alert
+            else:
+                self._alert_banner = None
 
         # --- Output ---
         self._update_leds()
